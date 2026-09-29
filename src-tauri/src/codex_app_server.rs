@@ -46,6 +46,13 @@ const GPT_5_6_CONTEXT_WINDOW_FALLBACK: u64 = 353_400;
 const GPT_6_ASTRA_CONTEXT_WINDOW_FALLBACK: u64 = 272_000;
 const DEFAULT_CODEX_REASONING_SUMMARY: &str = "auto";
 const COMMAND_OUTPUT_EMIT_INTERVAL: Duration = Duration::from_millis(100);
+/// Per-command output kept for the live tool row: the first bytes plus a
+/// sliding window of the latest ones. Everything in between is dropped and
+/// counted. Without a bound, a chatty command made every 100ms snapshot below
+/// clone, serialise and post the entire output to the webview, which is how a
+/// long-running Bash tool took the host past 90 GiB and froze every window.
+const COMMAND_OUTPUT_HEAD_LIMIT: usize = 16 * 1024;
+const COMMAND_OUTPUT_TAIL_LIMIT: usize = 48 * 1024;
 const CODEX_CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const CODEX_IDLE_REAPER_INTERVAL: Duration = Duration::from_secs(30);
 const CODEX_ACCOUNT_STATE_FILE: &str = "codex-account-state.json";
@@ -55,6 +62,79 @@ static CODEX_TEMP_IMAGE_COUNTER: AtomicU64 = AtomicU64::new(0);
 static CODEX_HOME_PROBE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 type ReplySender = Sender<Result<Value, String>>;
+
+/// Output of one command execution, bounded to head + tail (see the limits above).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+struct BoundedCommandOutput {
+    head: String,
+    tail: String,
+    dropped_bytes: usize,
+}
+
+impl BoundedCommandOutput {
+    fn from_text(text: &str) -> Self {
+        let mut output = Self::default();
+        output.push_str(text);
+        output
+    }
+
+    fn push_str(&mut self, delta: &str) {
+        let mut rest = delta;
+        if self.head.len() < COMMAND_OUTPUT_HEAD_LIMIT {
+            let cut = floor_char_boundary(rest, COMMAND_OUTPUT_HEAD_LIMIT - self.head.len());
+            self.head.push_str(&rest[..cut]);
+            rest = &rest[cut..];
+        }
+        if rest.is_empty() {
+            return;
+        }
+        if rest.len() >= COMMAND_OUTPUT_TAIL_LIMIT {
+            // The delta alone fills the window: nothing already buffered survives.
+            let start = ceil_char_boundary(rest, rest.len() - COMMAND_OUTPUT_TAIL_LIMIT);
+            self.dropped_bytes += self.tail.len() + start;
+            self.tail.clear();
+            self.tail.push_str(&rest[start..]);
+            return;
+        }
+        self.tail.push_str(rest);
+        if self.tail.len() > COMMAND_OUTPUT_TAIL_LIMIT {
+            let cut = ceil_char_boundary(&self.tail, self.tail.len() - COMMAND_OUTPUT_TAIL_LIMIT);
+            self.tail.drain(..cut);
+            self.dropped_bytes += cut;
+        }
+    }
+
+    fn snapshot(&self) -> String {
+        if self.dropped_bytes == 0 {
+            let mut text = String::with_capacity(self.head.len() + self.tail.len());
+            text.push_str(&self.head);
+            text.push_str(&self.tail);
+            return text;
+        }
+        format!(
+            "{}\n[... {} bytes of output omitted by BAT ...]\n{}",
+            self.head, self.dropped_bytes, self.tail
+        )
+    }
+}
+
+/// Largest `i <= index` that is a char boundary of `text`.
+fn floor_char_boundary(text: &str, index: usize) -> usize {
+    let mut i = index.min(text.len());
+    while !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+/// Smallest `i >= index` that is a char boundary of `text`.
+fn ceil_char_boundary(text: &str, index: usize) -> usize {
+    let mut i = index.min(text.len());
+    while !text.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}
 
 fn should_reap_codex_connection(
     idle_for: Duration,
@@ -366,7 +446,7 @@ struct CodexSession {
     last_turn_duration_ms: Option<u64>,
     messages: Vec<Value>,
     temporary_image_paths: Vec<PathBuf>,
-    command_outputs: HashMap<String, String>,
+    command_outputs: HashMap<String, BoundedCommandOutput>,
     command_output_last_emit: HashMap<String, Instant>,
     runtime_status: Option<String>,
     runtime_message: Option<String>,
@@ -6925,7 +7005,7 @@ fn handle_command_execution_output_delta(
         session
             .command_output_last_emit
             .insert(item_id.to_string(), now);
-        let output_snapshot = output.clone();
+        let output_snapshot = output.snapshot();
         update_session_tool_call(
             session,
             item_id,
@@ -6968,8 +7048,11 @@ fn completed_command_execution_result(
             session.command_outputs.remove(&item_id)
         })
     };
-    raw.or(accumulated)
-        .map(|value| sanitize_terminal_output(&value))
+    // The app-server's aggregatedOutput is the whole thing; bound it the same
+    // way as the streamed buffer so a completed tool row cannot carry megabytes
+    // into session state, the webview and every remote client.
+    raw.map(|value| BoundedCommandOutput::from_text(&sanitize_terminal_output(&value)).snapshot())
+        .or_else(|| accumulated.map(|output| output.snapshot()))
 }
 
 fn handle_item_started(
@@ -7647,6 +7730,82 @@ fn handle_turn_completed(
 mod tests {
     use super::*;
     use std::env;
+
+    #[test]
+    fn bounded_command_output_keeps_small_output_verbatim() {
+        let mut output = BoundedCommandOutput::default();
+        output.push_str("hello ");
+        output.push_str("world");
+        assert_eq!(output.snapshot(), "hello world");
+        assert_eq!(output.dropped_bytes, 0);
+    }
+
+    #[test]
+    fn bounded_command_output_keeps_head_and_latest_tail() {
+        let mut output = BoundedCommandOutput::default();
+        let total = 4 * 1024 * 1024;
+        let mut last_chunk = String::new();
+        for i in 0..(total / 1024) {
+            let chunk = format!("{i:07}") + &"x".repeat(1024 - 8) + "\n";
+            assert_eq!(chunk.len(), 1024);
+            output.push_str(&chunk);
+            last_chunk = chunk;
+        }
+        let snapshot = output.snapshot();
+        assert!(snapshot.starts_with("0000000xxx"), "head kept");
+        assert!(snapshot.ends_with(&last_chunk), "latest output kept");
+        assert!(snapshot.contains("bytes of output omitted by BAT"));
+        assert_eq!(output.head.len(), COMMAND_OUTPUT_HEAD_LIMIT);
+        assert_eq!(output.tail.len(), COMMAND_OUTPUT_TAIL_LIMIT);
+        assert_eq!(
+            output.head.len() + output.tail.len() + output.dropped_bytes,
+            total
+        );
+        assert!(snapshot.len() < COMMAND_OUTPUT_HEAD_LIMIT + COMMAND_OUTPUT_TAIL_LIMIT + 128);
+    }
+
+    #[test]
+    fn bounded_command_output_single_huge_delta_keeps_only_the_end() {
+        let mut output = BoundedCommandOutput::default();
+        output.push_str("old tail");
+        let huge = "a".repeat(COMMAND_OUTPUT_HEAD_LIMIT)
+            + &"b".repeat(COMMAND_OUTPUT_TAIL_LIMIT * 3)
+            + "END";
+        output.push_str(&huge);
+        let snapshot = output.snapshot();
+        assert!(snapshot.starts_with("old tail"));
+        assert!(snapshot.ends_with("END"));
+        assert_eq!(output.tail.len(), COMMAND_OUTPUT_TAIL_LIMIT);
+        assert_eq!(
+            output.head.len() + output.tail.len() + output.dropped_bytes,
+            8 + huge.len()
+        );
+    }
+
+    #[test]
+    fn bounded_command_output_never_splits_a_multibyte_char() {
+        let mut output = BoundedCommandOutput::default();
+        // 3-byte chars whose count is not aligned to either limit.
+        let chunk = "\u{4e2d}".repeat(1000);
+        for _ in 0..40 {
+            output.push_str(&chunk);
+        }
+        let snapshot = output.snapshot();
+        assert!(output.head.len() <= COMMAND_OUTPUT_HEAD_LIMIT);
+        assert!(output.tail.len() <= COMMAND_OUTPUT_TAIL_LIMIT);
+        assert!(snapshot.chars().all(|c| c == '\u{4e2d}' || c.is_ascii()));
+    }
+
+    #[test]
+    fn bounded_command_output_from_text_bounds_completed_results() {
+        let text = "h".repeat(COMMAND_OUTPUT_HEAD_LIMIT)
+            + &"m".repeat(1_000_000)
+            + &"t".repeat(COMMAND_OUTPUT_TAIL_LIMIT);
+        let snapshot = BoundedCommandOutput::from_text(&text).snapshot();
+        assert!(snapshot.starts_with(&"h".repeat(COMMAND_OUTPUT_HEAD_LIMIT)));
+        assert!(snapshot.ends_with(&"t".repeat(COMMAND_OUTPUT_TAIL_LIMIT)));
+        assert!(snapshot.contains("[... 1000000 bytes of output omitted by BAT ...]"));
+    }
 
     #[test]
     fn reasoning_part_separator_only_between_parts() {

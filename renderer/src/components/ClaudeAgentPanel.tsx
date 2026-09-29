@@ -37,7 +37,7 @@ import { useRafBatchedString } from '../utils/use-raf-batched-string'
 import { translateRuntimeMessage } from '../utils/runtime-status-message'
 import { agentSendResultError, isMissingSessionCwdError } from '../utils/agent-send-recovery'
 import { dispatchWorkerCommand, parseWorkerSlashCommand } from '../utils/worker-command'
-import { buildCollapsedOutputPreview, formatContentSize, formatToolElapsed, parseShellInvocation, stringifyToolResult, summarizeToolCommandInput, summarizeToolSearchResult, toolRowLayout, truncateMiddle } from './CodexAgentPanel.helpers'
+import { buildCollapsedOutputPreview, clampToolOutputText, formatContentSize, formatToolElapsed, parseShellInvocation, stringifyToolResult, summarizeToolCommandInput, summarizeToolSearchResult, toolRowLayout, truncateMiddle } from './CodexAgentPanel.helpers'
 import { AgentToolRow } from './AgentToolRow'
 import { buildAskUserQnA, formatAskUserPrompt, normalizePendingAskUser, summarizeAskUserInput, wrapPreviewHtml } from './AskUserQuestion.helpers'
 import { AgentAskUserQnA } from './AgentAskUserQnA'
@@ -4836,7 +4836,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
             item.id,
             item.result,
             () => {
-              const raw = stringifyToolResult(item.result)
+              const raw = clampToolOutputText(stringifyToolResult(item.result))
               const normalizedRaw = parseContentBlocks(raw)
               const split = splitSystemReminders(normalizedRaw)
               return {
