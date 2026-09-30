@@ -200,6 +200,11 @@ Split into reviewable commits by area:
      - it did not get the Codex sandbox, approval and effort params, so it ignored the
        bypass-permissions default.
 
+     - the host router (`is_codex_agent_preset_id` / `should_handle_codex`) did not know it
+       either, so a Fugu session was started on the node sidecar as if it were a Claude
+       session instead of on the Codex app-server. The remote workspace summaries skipped it
+       for the same reason.
+
      It now takes the Codex agent path everywhere.
    - **Claude Agent (Worktree)** now shows the right-sidebar Skills tab like the other Claude
      agent presets. Previously only `claude-code` and `claude-code-v2` were listed.

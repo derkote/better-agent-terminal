@@ -57,6 +57,9 @@ pub struct PresetDefinition {
     pub hidden: bool,
     #[serde(default)]
     pub debug: bool,
+    /// Retired ids persisted data may still carry (e.g. openai-agent).
+    #[serde(default)]
+    pub aliases: Vec<String>,
     /// The full JSON object, used to build the renderer-facing metadata.
     #[serde(skip)]
     raw: Map<String, Value>,
@@ -112,6 +115,17 @@ pub fn provider_with_usage(kind: &str) -> Option<&'static str> {
 
 pub fn preset(id: &str) -> Option<&'static PresetDefinition> {
     manifest().presets.iter().find(|preset| preset.id == id)
+}
+
+/// Maps a retired preset id to its current one; other ids come back unchanged.
+/// Mirrors `resolvePresetAlias` in shared/providers.mjs.
+pub fn resolve_preset_alias(preset_id: &str) -> &str {
+    manifest()
+        .presets
+        .iter()
+        .find(|preset| preset.aliases.iter().any(|alias| alias == preset_id))
+        .map(|preset| preset.id.as_str())
+        .unwrap_or(preset_id)
 }
 
 /// The SDK runtime that owns a preset's session: "claude" (node sidecar) or
@@ -198,6 +212,13 @@ mod tests {
         let metadata = preset_metadata("codex-fugu").unwrap();
         assert_eq!(metadata["name"], "Codex Fugu Agent");
         assert_eq!(preset_metadata("nope"), None);
+    }
+
+    #[test]
+    fn aliases_resolve_to_current_ids() {
+        assert_eq!(resolve_preset_alias("openai-agent"), "codex-agent");
+        assert_eq!(resolve_preset_alias("codex-agent"), "codex-agent");
+        assert_eq!(resolve_preset_alias("nope"), "nope");
     }
 
     #[test]
