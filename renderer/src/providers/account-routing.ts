@@ -3,6 +3,7 @@
 // it can be unit-tested (tests/provider-accounts.test.ts).
 
 import {
+  defaultPresetForRuntime,
   getProvider,
   panelOfPreset,
   providerOfPreset,
@@ -26,17 +27,26 @@ export function accountSwitchedEvent(providerId: ProviderId): string {
 }
 
 /**
- * Provider named by a host `claude:account-changed` broadcast. Hosts only ever
- * sent claude/codex, and anything unrecognised has always meant claude.
+ * Provider named by a host payload (`claude:account-changed` `agent`,
+ * `agent:usage` `provider`). Hosts only ever sent claude/codex, and anything
+ * unrecognised has always meant claude.
  */
-export function accountEventProvider(agent: unknown): ProviderId {
-  return typeof agent === 'string' && getProvider(agent) ? agent : 'claude'
+export function hostProviderOf(value: unknown): ProviderId {
+  return typeof value === 'string' && getProvider(value) ? value : 'claude'
 }
 
 /** Provider whose host usage snapshot to show, or null when it reports no usage. */
 export function usageProviderOf(providerId: ProviderId | null | undefined): ProviderId | null {
   const provider = getProvider(providerId)
   return provider && provider.usage !== 'none' ? provider.id : null
+}
+
+/**
+ * Provider whose usage a session's statusline shows: the session's own
+ * provider, or the runtime's default provider before the preset is known.
+ */
+export function sessionUsageProvider(presetId: string | null | undefined, runtime: SdkRuntimeFamily): ProviderId | null {
+  return usageProviderOf(providerOfPreset(presetId) ?? providerOfPreset(defaultPresetForRuntime(runtime)))
 }
 
 /** The agent CLI runtime a provider's sessions run on. */

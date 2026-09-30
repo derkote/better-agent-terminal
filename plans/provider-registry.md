@@ -1,6 +1,6 @@
 # Provider registry
 
-Status: Phase 0 and Phase 1.1–1.2 implemented (2026-09-30); Phase 1.3–1.4 and Phase 2 pending.
+Status: Phases 0 and 1 implemented (2026-09-30); Phase 2 pending.
 
 ## Goal
 
@@ -219,10 +219,18 @@ Split into reviewable commits by area:
      points to Settings, because an API-key provider has no sign-in flow.
    - **Fugu** completion notifications are tagged `codex`. `agent_kind_from_options` had
      no entry for it before.
-3. **Usage:** `claude-usage-cache` (`UsageProvider` becomes `ProviderId`, and `ingest` no
+3. **Usage (done):** `claude-usage-cache` (`UsageProvider` becomes `ProviderId`, and `ingest` no
    longer falls back to Claude), the `claude_usage.rs` poller loop, and the statusline
    usage source in both panels.
-4. **Fugu fixes that fall out of this:**
+
+   The poller loops over `providers()` and polls each by its `usage` kind. Snapshots are
+   tagged with the provider id that owns the kind (`provider_with_usage`). The renderer cache
+   keys snapshots by provider id (`usageSnapshotFromPayload`). The statusline follows the
+   session's provider (`sessionUsageProvider`).
+
+   Intended behaviour change: **Fugu** sessions no longer show the Codex account's 5h/7d
+   windows in the statusline, because Fugu reports no usage.
+4. **Fugu fixes that fall out of this (done, spread over 1.1–1.3):**
    - It gets an account chip (key configured / not configured).
    - `notification.rs` routes it as `fugu`/codex.
    - Every preset check that previously missed it now covers it.
@@ -246,7 +254,7 @@ Split into reviewable commits by area:
 | `plans/provider-registry.md` (this file) | status per phase | every phase |
 | `docs/providers.md` (new, done) | Manifest reference, kinds (`auth`, `usage`, `panel`), and **"Adding a provider" checklist**: manifest entry, adapter only if a new kind is needed, locales, tests, README row | 0, extended in 2 |
 | `CLAUDE.md` and `AGENTS.md` (done) | New § **Providers**: never compare against provider or preset id literals outside the registries; `shared/providers.json` is the source of truth; link to `docs/providers.md` | 0 |
-| `README.md` | Agent presets line and Features: "providers are declared in one manifest". § Account & Usage: per-provider accounts and usage. New § **Providers**: supported providers, enabling/disabling them in Settings → Providers, and that disabled providers are not polled or installed | 1 (accounts/usage wording), 2 (Providers section) |
+| `README.md` (phase 1 part done) | Agent presets line and Features: "providers are declared in one manifest". § Account & Usage: per-provider accounts and usage. New § **Providers**: supported providers, enabling/disabling them in Settings → Providers, and that disabled providers are not polled or installed | 1 (accounts/usage wording), 2 (Providers section) |
 
 ## Verification
 

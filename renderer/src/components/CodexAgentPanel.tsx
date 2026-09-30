@@ -48,6 +48,7 @@ import { ReasoningSummary } from './ReasoningSummary'
 import { bindPanelActiveEvent, usePanelActivation, usePanelActiveEffect, type PanelActivation } from '../utils/panel-activation'
 import { prepareFilePickerResults, type FilePickerSearchEntry } from '../utils/file-picker-search'
 import { apiVersionOfPreset, defaultModelOfPreset, defaultPresetForRuntime, isWorktreePreset, providerOfPreset } from '../../../shared/providers.mjs'
+import { sessionUsageProvider } from '../providers/account-routing'
 
 function clearRuntimeStatusMeta(meta: SessionMeta | null): SessionMeta | null {
   if (!meta?.runtimeStatus && !meta?.runtimeMessage && !meta?.runtimeStatusStartedAt) return meta
@@ -450,16 +451,19 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
   // Host-wide usage poll (one poller per host, active account) keeps the 5h/7d
   // statusline items fresh while idle; mid-turn rate_limit_events still
   // overwrite with the latest API-reported numbers. Provider follows the
-  // session: codex sessions show the codex account's windows, not Claude's.
+  // session: codex sessions show the codex account's windows, not Claude's,
+  // and providers that report no usage (e.g. Fugu) show none.
+  const usageProvider = sessionUsageProvider(terminal?.agentPreset, isCodexSession ? 'codex' : 'claude')
   useEffect(() => {
+    if (!usageProvider) return
     const apply = () => {
-      const snap = getHostUsageSnapshot(isCodexSession ? 'codex' : 'claude')
+      const snap = getHostUsageSnapshot(usageProvider)
       if (!snap) return
       setRateLimits(prev => rateLimitsFromHostUsage(snap, prev))
     }
     apply()
     return subscribeHostUsage(apply)
-  }, [isCodexSession])
+  }, [usageProvider])
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   const [availableEfforts, setAvailableEfforts] = useState<string[]>(() => [...CODEX_EFFORT_LEVELS])
   const [availableCodexSandboxModes, setAvailableCodexSandboxModes] = useState<string[]>(() => [...CODEX_SANDBOX_MODES])

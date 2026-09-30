@@ -13,7 +13,7 @@ import { FolderPicker } from './FolderPicker'
 import { NewTerminalQuickPick, type QuickPickChoice } from './NewTerminalQuickPick'
 import { AgentPresetId, getAgentPreset, getVisiblePresets } from '../types/agent-presets'
 import { isProcfileName } from '../utils/procfile-parser'
-import { getHostUsageSnapshot, subscribeHostUsage, type HostUsageSnapshot, type UsageProvider } from '../utils/claude-usage-cache'
+import { getHostUsageSnapshot, subscribeHostUsage, type HostUsageSnapshot } from '../utils/claude-usage-cache'
 import {
   normalizeRemoteAuthCapabilities,
   supportsRemoteLogin,
@@ -200,7 +200,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
       setHostUsage(null)
       return
     }
-    const apply = () => setHostUsage(getHostUsageSnapshot(provider as UsageProvider))
+    const apply = () => setHostUsage(getHostUsageSnapshot(provider))
     apply()
     return subscribeHostUsage(apply)
   }, [accountChip?.kind])

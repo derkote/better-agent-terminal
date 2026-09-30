@@ -95,6 +95,21 @@ pub fn manifest() -> &'static ProviderManifest {
     })
 }
 
+/// Providers in manifest (display) order.
+pub fn providers() -> &'static [ProviderDefinition] {
+    &manifest().providers
+}
+
+/// The provider whose usage is read by the given `usage` kind. Each kind reads
+/// one host-wide credential (the Claude CLI login, the Codex app-server
+/// account), so at most one provider uses it.
+pub fn provider_with_usage(kind: &str) -> Option<&'static str> {
+    providers()
+        .iter()
+        .find(|provider| provider.usage == kind)
+        .map(|provider| provider.id.as_str())
+}
+
 pub fn preset(id: &str) -> Option<&'static PresetDefinition> {
     manifest().presets.iter().find(|preset| preset.id == id)
 }
@@ -192,6 +207,19 @@ mod tests {
         assert_eq!(sdk_runtime_family("claude-channel"), None);
         assert_eq!(sdk_runtime_family("codex-cli"), None);
         assert_eq!(sdk_runtime_family("nope"), None);
+    }
+
+    #[test]
+    fn usage_kinds_resolve_to_their_provider() {
+        assert_eq!(provider_with_usage("anthropic-oauth"), Some("claude"));
+        assert_eq!(provider_with_usage("codex-rate-limits"), Some("codex"));
+        assert_eq!(provider_with_usage("nope"), None);
+        let polled: Vec<&str> = providers()
+            .iter()
+            .filter(|provider| provider.usage != "none")
+            .map(|provider| provider.id.as_str())
+            .collect();
+        assert_eq!(polled, ["claude", "codex"]);
     }
 
     #[test]

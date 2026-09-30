@@ -2,11 +2,13 @@ import * as assert from 'node:assert/strict'
 
 import {
   accountChipProviderOf,
-  accountEventProvider,
   accountSwitchedEvent,
   cliRuntimeOf,
+  hostProviderOf,
+  sessionUsageProvider,
   usageProviderOf,
 } from '../renderer/src/providers/account-routing.ts'
+import { usageSnapshotFromPayload } from '../renderer/src/utils/claude-usage-cache.ts'
 import { normalizeRemoteAuthCapabilities, supportsRemoteLogin } from '../renderer/src/utils/remote-auth.ts'
 import { PROVIDER_MANIFEST } from '../shared/providers.mjs'
 
@@ -40,11 +42,11 @@ function testAccountEvents() {
   assert.equal(accountSwitchedEvent('fugu'), 'fugu-account-switched')
   // Host broadcasts claude:account-changed {agent}; older hosts only send
   // claude/codex, and anything unrecognised was always treated as claude.
-  assert.equal(accountEventProvider('codex'), 'codex')
-  assert.equal(accountEventProvider('fugu'), 'fugu')
-  assert.equal(accountEventProvider('claude'), 'claude')
-  assert.equal(accountEventProvider(undefined), 'claude')
-  assert.equal(accountEventProvider('something-else'), 'claude')
+  assert.equal(hostProviderOf('codex'), 'codex')
+  assert.equal(hostProviderOf('fugu'), 'fugu')
+  assert.equal(hostProviderOf('claude'), 'claude')
+  assert.equal(hostProviderOf(undefined), 'claude')
+  assert.equal(hostProviderOf('something-else'), 'claude')
 }
 
 function testUsageAndRuntime() {
@@ -56,6 +58,40 @@ function testUsageAndRuntime() {
   assert.equal(cliRuntimeOf('codex'), 'codex')
   assert.equal(cliRuntimeOf('fugu'), 'codex')
   assert.equal(cliRuntimeOf('nope'), undefined)
+}
+
+function testSessionUsageProvider() {
+  // Statusline usage follows the session's provider.
+  assert.equal(sessionUsageProvider('claude-code', 'claude'), 'claude')
+  assert.equal(sessionUsageProvider('codex-agent-worktree', 'codex'), 'codex')
+  // Fugu reports no usage (it used to show the Codex account's windows).
+  assert.equal(sessionUsageProvider('codex-fugu', 'codex'), null)
+  // No preset yet: the runtime's default provider.
+  assert.equal(sessionUsageProvider(undefined, 'codex'), 'codex')
+  assert.equal(sessionUsageProvider(undefined, 'claude'), 'claude')
+}
+
+function testUsageSnapshotParsing() {
+  const claude = usageSnapshotFromPayload({
+    provider: 'claude',
+    fiveHour: { utilization: 0.25, resetsAt: '2026-09-30T12:00:00Z' },
+    sevenDay: null,
+    fetchedAt: 1,
+  })
+  assert.equal(claude?.provider, 'claude')
+  assert.equal(claude?.fiveHour?.utilization, 0.25)
+  assert.equal(claude?.fiveHour?.resetsAt, Date.parse('2026-09-30T12:00:00Z'))
+
+  // Codex rate-limit reads may carry only explicit nulls; they clear the windows.
+  const codexCleared = usageSnapshotFromPayload({ provider: 'codex', fiveHour: null, sevenDay: null })
+  assert.equal(codexCleared?.provider, 'codex')
+  assert.equal(codexCleared?.fiveHour, null)
+  // ...but a Claude payload without windows is unusable, as before.
+  assert.equal(usageSnapshotFromPayload({ provider: 'claude', fiveHour: null, sevenDay: null }), null)
+
+  // Hosts only ever tagged claude/codex; anything unrecognised meant claude.
+  assert.equal(usageSnapshotFromPayload({ fiveHour: { utilization: 0.1, resetsAt: 5 } })?.provider, 'claude')
+  assert.equal(usageSnapshotFromPayload(null), null)
 }
 
 function testRemoteLoginIsKeyedByAuthKind() {
@@ -74,5 +110,7 @@ function testRemoteLoginIsKeyedByAuthKind() {
 testAccountChipProvider()
 testAccountEvents()
 testUsageAndRuntime()
+testSessionUsageProvider()
+testUsageSnapshotParsing()
 testRemoteLoginIsKeyedByAuthKind()
 console.log('provider-accounts: passed')

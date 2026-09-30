@@ -48,6 +48,7 @@ import { bindPanelActiveEvent, usePanelActivation, usePanelActiveEffect, type Pa
 import { prepareFilePickerResults, type FilePickerSearchEntry } from '../utils/file-picker-search'
 import { buildTranscriptHandoffPrompt, codexPermissionsForClaudeHandoff, type TranscriptSnapshot } from '../utils/agent-context-transfer'
 import { apiVersionOfPreset, defaultPresetForRuntime, isWorktreePreset, providerOfPreset, sdkRuntimeFamilyOfPreset, type ProviderId, type SdkRuntimeFamily } from '../../../shared/providers.mjs'
+import { sessionUsageProvider } from '../providers/account-routing'
 
 interface SessionMeta {
   model?: string
@@ -405,16 +406,19 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
   // Host-wide usage poll (one poller per host, active account) keeps the 5h/7d
   // statusline items fresh while idle; mid-turn rate_limit_events still
   // overwrite with the latest API-reported numbers. Provider follows the
-  // session: codex sessions show the codex account's windows, not Claude's.
+  // session: codex sessions show the codex account's windows, not Claude's,
+  // and providers that report no usage (e.g. Fugu) show none.
+  const usageProvider = sessionUsageProvider(terminal?.agentPreset, isCodexSession ? 'codex' : 'claude')
   useEffect(() => {
+    if (!usageProvider) return
     const apply = () => {
-      const snap = getHostUsageSnapshot(isCodexSession ? 'codex' : 'claude')
+      const snap = getHostUsageSnapshot(usageProvider)
       if (!snap) return
       setRateLimits(prev => rateLimitsFromHostUsage(snap, prev))
     }
     apply()
     return subscribeHostUsage(apply)
-  }, [isCodexSession])
+  }, [usageProvider])
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>([])
   const [availableEfforts, setAvailableEfforts] = useState<string[]>(() => [...EFFORT_LEVELS])
   const [availableCodexSandboxModes, setAvailableCodexSandboxModes] = useState<string[]>(() => [...CODEX_SANDBOX_MODES])
