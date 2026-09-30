@@ -32,7 +32,9 @@ use tauri::Manager;
 
 use crate::host_context::HostContext;
 
-const DEFAULT_CODEX_MODEL: &str = "gpt-5.6-sol";
+// Codex's catalog marks the GPT-5.6 tier "older generation" with an upgrade
+// pointer to gpt-6-sol; new sessions without an explicit choice follow it.
+const DEFAULT_CODEX_MODEL: &str = "gpt-6-sol";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const TURN_START_TIMEOUT: Duration = Duration::from_secs(60);
 const PENDING_TURN_INTERRUPT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -40,10 +42,11 @@ const PENDING_TURN_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const MSG_BUFFER_CAP: usize = 300;
 const DEFAULT_CODEX_CONTEXT_WINDOW: u64 = 1_000_000;
 const GPT_5_6_CONTEXT_WINDOW_FALLBACK: u64 = 353_400;
-// Codex CLI 0.153.x bundled catalog value for gpt-6-astra. The API model page
-// advertises 1,050,000 but Codex itself runs the model on this window; the
-// app-server reports the authoritative number in token usage updates.
-const GPT_6_ASTRA_CONTEXT_WINDOW_FALLBACK: u64 = 272_000;
+// Codex CLI 0.159.x bundled catalog value for the whole GPT-6 family (Astra,
+// 6.1 Sol, Sol, Luna). The API model pages advertise 1,050,000 but Codex itself
+// runs them on this window; the app-server reports the authoritative number in
+// token usage updates.
+const GPT_6_CONTEXT_WINDOW_FALLBACK: u64 = 272_000;
 const DEFAULT_CODEX_REASONING_SUMMARY: &str = "auto";
 const COMMAND_OUTPUT_EMIT_INTERVAL: Duration = Duration::from_millis(100);
 /// Per-command output kept for the live tool row: the first bytes plus a
@@ -617,7 +620,7 @@ fn codex_context_window_for_model(model: &str) -> u64 {
     match codex_base_model(model) {
         // The app-server reports the authoritative value in token usage updates.
         // Keep this fallback accurate before the first update arrives.
-        "gpt-6-astra" => GPT_6_ASTRA_CONTEXT_WINDOW_FALLBACK,
+        "gpt-6.1-sol" | "gpt-6-astra" | "gpt-6-sol" | "gpt-6-luna" => GPT_6_CONTEXT_WINDOW_FALLBACK,
         "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-5.6-luna" => GPT_5_6_CONTEXT_WINDOW_FALLBACK,
         "gpt-5.5"
         | "gpt-5.4"
@@ -2867,13 +2870,24 @@ impl CodexAppServerState {
     }
 
     pub fn supported_models(&self) -> Value {
+        // Order follows the Codex 0.159 catalog priority; the GPT-6 family shares
+        // one API window, so every member gets the 272K / 872K presets Astra had.
         let mut models = vec![
+            json!({ "value": "gpt-6.1-sol", "displayName": "GPT-6.1 Sol", "description": "Latest workhorse - coding and everyday work", "source": "builtin" }),
+            json!({ "value": "gpt-6.1-sol:272k", "displayName": "GPT-6.1 Sol (272K)", "description": "GPT-6.1 Sol - 272K context window", "source": "builtin" }),
+            json!({ "value": "gpt-6.1-sol:872k", "displayName": "GPT-6.1 Sol (872K)", "description": "GPT-6.1 Sol - 872K context window", "source": "builtin" }),
             json!({ "value": "gpt-6-astra", "displayName": "GPT-6 Astra", "description": "Most capable - complex, demanding work", "source": "builtin" }),
             json!({ "value": "gpt-6-astra:272k", "displayName": "GPT-6 Astra (272K)", "description": "GPT-6 Astra - 272K context window", "source": "builtin" }),
             json!({ "value": "gpt-6-astra:872k", "displayName": "GPT-6 Astra (872K)", "description": "GPT-6 Astra - 872K context window", "source": "builtin" }),
-            json!({ "value": "gpt-5.6-sol", "displayName": "GPT-5.6 Sol", "description": "Flagship - complex, open-ended work", "source": "builtin" }),
-            json!({ "value": "gpt-5.6-terra", "displayName": "GPT-5.6 Terra", "description": "Balanced - everyday workhorse", "source": "builtin" }),
-            json!({ "value": "gpt-5.6-luna", "displayName": "GPT-5.6 Luna", "description": "Fast - clear, repeatable work", "source": "builtin" }),
+            json!({ "value": "gpt-6-sol", "displayName": "GPT-6 Sol", "description": "Workhorse - near-Astra quality at lower cost", "source": "builtin" }),
+            json!({ "value": "gpt-6-sol:272k", "displayName": "GPT-6 Sol (272K)", "description": "GPT-6 Sol - 272K context window", "source": "builtin" }),
+            json!({ "value": "gpt-6-sol:872k", "displayName": "GPT-6 Sol (872K)", "description": "GPT-6 Sol - 872K context window", "source": "builtin" }),
+            json!({ "value": "gpt-6-luna", "displayName": "GPT-6 Luna", "description": "Fast and affordable - focused, high-volume tasks", "source": "builtin" }),
+            json!({ "value": "gpt-6-luna:272k", "displayName": "GPT-6 Luna (272K)", "description": "GPT-6 Luna - 272K context window", "source": "builtin" }),
+            json!({ "value": "gpt-6-luna:872k", "displayName": "GPT-6 Luna (872K)", "description": "GPT-6 Luna - 872K context window", "source": "builtin" }),
+            json!({ "value": "gpt-5.6-sol", "displayName": "GPT-5.6 Sol", "description": "Older generation - upgrade path is GPT-6 Sol", "source": "builtin" }),
+            json!({ "value": "gpt-5.6-terra", "displayName": "GPT-5.6 Terra", "description": "Older generation - balanced workhorse", "source": "builtin" }),
+            json!({ "value": "gpt-5.6-luna", "displayName": "GPT-5.6 Luna", "description": "Older generation - fast, repeatable work", "source": "builtin" }),
             json!({ "value": "gpt-5.3-codex-spark", "displayName": "GPT-5.3 Codex Spark", "description": "Research preview - near-instant coding", "source": "builtin" }),
             json!({ "value": "gpt-5.5", "displayName": "GPT-5.5", "description": "Previous frontier GPT-5.5", "source": "builtin" }),
             json!({ "value": "gpt-5.4", "displayName": "GPT-5.4", "description": "Legacy - API-key authentication only", "source": "builtin" }),
@@ -8154,9 +8168,15 @@ mod tests {
             .iter()
             .filter_map(|model| model.get("value").and_then(Value::as_str))
             .collect::<Vec<_>>();
-        assert!(values.contains(&"gpt-6-astra"));
-        assert!(values.contains(&"gpt-6-astra:272k"));
-        assert!(values.contains(&"gpt-6-astra:872k"));
+        assert_eq!(values[0], "gpt-6.1-sol", "catalog priority 1 leads the picker");
+        for base in ["gpt-6.1-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6-luna"] {
+            assert!(values.contains(&base), "{base} missing");
+            let k272 = format!("{base}:272k");
+            let k872 = format!("{base}:872k");
+            assert!(values.contains(&k272.as_str()), "{k272} missing");
+            assert!(values.contains(&k872.as_str()), "{k872} missing");
+        }
+        assert!(!values.iter().any(|value| value.starts_with("gpt-6-pro")));
         assert!(!values.iter().any(|value| value.starts_with("gpt-5.6-sol:")));
         assert!(values.contains(&"gpt-5.6-sol"));
         assert!(values.contains(&"gpt-5.6-terra"));
@@ -8235,9 +8255,12 @@ mod tests {
         assert_eq!(split_codex_model_selection("vendor:model"), ("vendor:model", None));
         assert_eq!(split_codex_model_selection("gpt-6-astra:0k"), ("gpt-6-astra:0k", None));
         assert_eq!(codex_context_window_for_model("gpt-6-astra:872k"), 872_000);
+        assert_eq!(codex_context_window_for_model("gpt-6.1-sol:872k"), 872_000);
+        assert_eq!(codex_context_window_for_model("gpt-6-sol"), GPT_6_CONTEXT_WINDOW_FALLBACK);
+        assert_eq!(codex_context_window_for_model("gpt-6-luna"), GPT_6_CONTEXT_WINDOW_FALLBACK);
         assert_eq!(
             codex_context_window_for_model("gpt-6-astra"),
-            GPT_6_ASTRA_CONTEXT_WINDOW_FALLBACK
+            GPT_6_CONTEXT_WINDOW_FALLBACK
         );
     }
 

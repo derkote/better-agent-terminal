@@ -40,9 +40,15 @@ async function inProcess() {
   const { getCodexSupportedModels, splitCodexModelSelection } = await import('../src/handlers/codex.mjs')
   const codexModels = getCodexSupportedModels()
   assert.deepEqual(
-    codexModels.slice(0, 5).map(model => model.value),
-    ['gpt-6-astra', 'gpt-6-astra:272k', 'gpt-6-astra:872k', 'gpt-5.6-sol', 'gpt-5.6-terra'],
-    'Codex sidecar model catalog should lead with GPT-6 Astra and its context-window presets',
+    codexModels.slice(0, 13).map(model => model.value),
+    [
+      'gpt-6.1-sol', 'gpt-6.1-sol:272k', 'gpt-6.1-sol:872k',
+      'gpt-6-astra', 'gpt-6-astra:272k', 'gpt-6-astra:872k',
+      'gpt-6-sol', 'gpt-6-sol:272k', 'gpt-6-sol:872k',
+      'gpt-6-luna', 'gpt-6-luna:272k', 'gpt-6-luna:872k',
+      'gpt-5.6-sol',
+    ],
+    'Codex sidecar model catalog should follow the Codex catalog priority with GPT-6 context-window presets',
   )
   assert.deepEqual(splitCodexModelSelection('gpt-6-astra:872k'), { model: 'gpt-6-astra', contextWindow: 872_000 })
   assert.deepEqual(splitCodexModelSelection('gpt-6-astra'), { model: 'gpt-6-astra', contextWindow: null })
