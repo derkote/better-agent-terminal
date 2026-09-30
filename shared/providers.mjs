@@ -33,6 +33,7 @@ const isNonEmptyString = value => typeof value === 'string' && value.trim() !== 
 
 function validateProviders(providers, errors) {
   const ids = new Set()
+  const usageOwners = new Map()
   if (!Array.isArray(providers)) {
     errors.push('providers must be an array')
     return ids
@@ -52,6 +53,12 @@ function validateProviders(providers, errors) {
       errors.push(`provider "${id}" has unknown apiKeyStore "${provider.apiKeyStore}"`)
     }
     if (!USAGE_KINDS.includes(provider.usage)) errors.push(`provider "${id}" has unknown usage kind "${provider.usage}"`)
+    // Each usage kind reads one host-wide credential, and its snapshots are keyed
+    // by the provider that owns it, so two providers cannot share one.
+    if (provider.usage !== 'none' && usageOwners.has(provider.usage)) {
+      errors.push(`provider "${id}" reuses usage kind "${provider.usage}" already owned by "${usageOwners.get(provider.usage)}"`)
+    }
+    usageOwners.set(provider.usage, id)
     if (typeof provider.defaultEnabled !== 'boolean') errors.push(`provider "${id}" needs a boolean defaultEnabled`)
   }
   return ids

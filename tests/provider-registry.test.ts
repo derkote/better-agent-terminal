@@ -50,6 +50,7 @@ function testValidatorRejectsBrokenManifests() {
     ['unknown panel', m => { m.presets[0].panel = 'nope' }, /preset "claude-code".*unknown panel "nope"/],
     ['unknown auth kind', m => { m.providers[0].auth = 'nope' }, /provider "claude".*unknown auth kind "nope"/],
     ['unknown usage kind', m => { m.providers[0].usage = 'nope' }, /provider "claude".*unknown usage kind "nope"/],
+    ['shared usage kind', m => { m.providers[2].usage = 'anthropic-oauth' }, /provider "fugu" reuses usage kind "anthropic-oauth"/],
     ['unknown runtime', m => { m.providers[0].runtime = 'nope' }, /provider "claude".*unknown runtime "nope"/],
     ['api-key provider without a key store', m => { delete m.providers[2].apiKeyStore }, /provider "fugu".*apiKeyStore/],
     ['missing name', m => { delete m.presets[0].name }, /preset "claude-code".*name/],

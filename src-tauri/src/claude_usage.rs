@@ -609,6 +609,8 @@ pub fn start(ctx: HostContext) {
                     let delay = match provider.usage.as_str() {
                         "anthropic-oauth" => poll_once(&ctx, &client),
                         "codex-rate-limits" => poll_codex_once(&ctx),
+                        // No usage to poll ("none"): never scheduled, so this
+                        // is re-checked each tick at no cost.
                         _ => continue,
                     };
                     due.insert(id, now + delay);

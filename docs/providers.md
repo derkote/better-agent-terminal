@@ -38,7 +38,7 @@ that still do are being moved over; see [`plans/provider-registry.md`](../plans/
 | `runtime` | `claude` \| `codex` | Agent CLI runtime its sessions run on; the account chip shows that runtime's version |
 | `auth` | `claude-oauth` \| `codex-oauth` \| `api-key` | Which account adapter handles it (`renderer/src/providers/accounts.ts`) |
 | `apiKeyStore` | `codex-env`? | Required for `api-key` providers: where the key lives (`codex-env` = `$CODEX_HOME/.env`) |
-| `usage` | `anthropic-oauth` \| `codex-rate-limits` \| `none` | Which usage/rate-limit adapter polls it |
+| `usage` | `anthropic-oauth` \| `codex-rate-limits` \| `none` | Which usage/rate-limit adapter polls it. Each kind other than `none` reads one host-wide credential, so at most one provider may use it. |
 | `defaultEnabled` | boolean | Initial state of the provider toggle |
 | `debugOnly` | boolean? | Only surfaced when `BAT_DEBUG` is set |
 | `defaultModel` | string? | Model new sessions start with, instead of the runtime's configured default (Fugu: `fugu`) |
