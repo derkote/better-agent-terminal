@@ -1629,6 +1629,13 @@ const CLAUDE_MODEL_TABLE: &[ClaudeModelDef] = &[
         description: None,
     },
     ClaudeModelDef {
+        id: "claude-sonnet-5-5",
+        label: "Sonnet 5.5",
+        context_window: 1_000_000,
+        windows: &[Some(200_000), Some(300_000), None],
+        description: None,
+    },
+    ClaudeModelDef {
         id: "claude-sonnet-5",
         label: "Sonnet 5",
         context_window: 1_000_000,

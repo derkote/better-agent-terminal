@@ -6157,6 +6157,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
           'fable-5':   P(10, 50),
           'opus-5':    P(5, 25),    'opus-4-8':  P(5, 25),    'opus-4-7':  P(5, 25),    'opus-4-6':  P(5, 25),    'opus-4-5':  P(5, 25),
           'opus-4-1':  P(15, 75),   'opus-4':    P(15, 75),   'opus-3': P(15, 75),
+          'sonnet-5-5': P(2, 10),
           'sonnet-5':  P(2, 10),
           'sonnet-4-6': P(3, 15),   'sonnet-4-5': P(3, 15),   'sonnet-4': P(3, 15),
           'sonnet-3-7': P(3, 15),   'sonnet-3-5': P(3, 15),
@@ -6174,6 +6175,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
           if (model.includes('opus-4-1')) return MODEL_PRICING['opus-4-1']
           if (model.includes('opus-4-0') || model.match(/opus-4(?!-)\b/) || model.match(/opus-4-2\d{7}/)) return MODEL_PRICING['opus-4']
           if (model.includes('opus-3') || model.includes('3-opus')) return MODEL_PRICING['opus-3']
+          if (model.includes('sonnet-5-5')) return MODEL_PRICING['sonnet-5-5']
           if (model.includes('sonnet-5')) return MODEL_PRICING['sonnet-5']
           if (model.includes('sonnet-4-6')) return MODEL_PRICING['sonnet-4-6']
           if (model.includes('sonnet-4-5')) return MODEL_PRICING['sonnet-4-5']

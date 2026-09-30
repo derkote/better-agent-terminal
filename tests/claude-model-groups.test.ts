@@ -107,6 +107,15 @@ function main() {
     'Fable 5.1 should use the published $10/$50 pricing and $0.25 cache-read price',
   )
   assert.match(panelSource, /'sonnet-5':\s+P\(2, 10\)/, 'Sonnet 5 pricing should be $2/$10 per MTok')
+  assert.match(panelSource, /'sonnet-5-5':\s+P\(2, 10\)/, 'Sonnet 5.5 keeps the Sonnet 5 price of $2/$10 per MTok')
+  assert.ok(
+    panelSource.indexOf("includes('sonnet-5-5')") < panelSource.indexOf("includes('sonnet-5')"),
+    'the Sonnet 5.5 pricing branch must be checked before the broader Sonnet 5 branch',
+  )
+  const sonnet55 = rows.find(r => r.key === 'claude-sonnet-5-5')
+  assert.ok(sonnet55, 'Sonnet 5.5 row should exist')
+  assert.deepEqual(sonnet55!.options.map(o => o.label), ['200K', '300K', '1M'])
+  assert.equal(rows.indexOf(sonnet55!) + 1, rows.findIndex(r => r.key === 'claude-sonnet-5'), 'Sonnet 5.5 sits directly above Sonnet 5')
 
   // Opus 4.7 is the widest model today (200K/300K/400K/1M).
   const opus47 = rows.find(r => r.key === 'claude-opus-4-7')
