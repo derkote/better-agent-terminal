@@ -59,49 +59,49 @@
     }
   },
   "node": {
-    "version": "24.20.0",
+    "version": "24.21.0",
     "platforms": {
       "darwin-arm64": {
         "nodePlatform": "darwin",
         "nodeArch": "arm64",
         "archiveExt": "tar.gz",
         "exePath": "bin/node",
-        "sha256": "40e5607e5ecb3db9192723776da2d75d966260fc74a7a9e731c1bd67dda96bc8"
+        "sha256": "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057"
       },
       "darwin-x64": {
         "nodePlatform": "darwin",
         "nodeArch": "x64",
         "archiveExt": "tar.gz",
         "exePath": "bin/node",
-        "sha256": "9e5b2644cf107befb6aefca676b96d3296bc10138096f022ed378d6233ed81f4"
+        "sha256": "1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097"
       },
       "linux-arm64": {
         "nodePlatform": "linux",
         "nodeArch": "arm64",
         "archiveExt": "tar.xz",
         "exePath": "bin/node",
-        "sha256": "5f4ddab610c1ab2016b3c227cebdbf6d9495161487e4739c7b90090595f465f7"
+        "sha256": "6ad1325edbdb5649c379b75a237147a666c95d4f9ae8d340fef2d1575d289ad2"
       },
       "linux-x64": {
         "nodePlatform": "linux",
         "nodeArch": "x64",
         "archiveExt": "tar.xz",
         "exePath": "bin/node",
-        "sha256": "2f2c0da162318f0de47665410c7c8c2ed3d36c8f3105de4bbc61176c70a7cbf2"
+        "sha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6"
       },
       "win32-arm64": {
         "nodePlatform": "win",
         "nodeArch": "arm64",
         "archiveExt": "zip",
         "exePath": "node.exe",
-        "sha256": "31c6799744de8a54601643098040c68c3697e56c94e407d61d0e5fa5f34191d7"
+        "sha256": "8779b1bde1d39f8d420e3b57aa657b39891af434d3de44a919044cec06785921"
       },
       "win32-x64": {
         "nodePlatform": "win",
         "nodeArch": "x64",
         "archiveExt": "zip",
         "exePath": "node.exe",
-        "sha256": "6cac9ffbca8f6a47091e4b5c772e0606049c3871cb67d900c0cedde630e545ba"
+        "sha256": "158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541"
       }
     }
   }
