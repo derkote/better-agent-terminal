@@ -87,6 +87,29 @@ Kinds (`auth`, `usage`, `panel`, `runtime`, `apiKeyStore`) are code. The allowed
 (`AUTH_KINDS`, `USAGE_KINDS`, `PANEL_KINDS`, `RUNTIME_KINDS`, `API_KEY_STORES`) and mirrored in `providers.d.mts`. Providers and
 presets are data.
 
+## Enabling and disabling providers
+
+Settings → Providers stores per-provider toggles in the `providers` setting (`settings.json`):
+`{ "providers": { "codex": { "enabled": false } } }`. A missing or malformed entry means the
+provider's `defaultEnabled`. The helpers in `shared/providers.mjs` (`enabledProviderIds`,
+`isPresetEnabled`, `requiredRuntimes`, `canDisableProvider`, `resolveDefaultAgentPreset`) and
+their Rust mirror in `providers.rs` (`provider_toggles`, `enabled_provider_ids`) apply these
+rules:
+
+- `debugOnly` providers only count as enabled when `BAT_DEBUG` is set.
+- The last enabled provider cannot be switched off. A settings file that disables every
+  provider falls back to the defaults.
+- A disabled provider's presets are not offered: the host drops them from
+  `agent:get-supported-session-types` / `agent:list-presets`, and the renderer applies the local
+  setting immediately.
+- The usage poller skips disabled providers, so they generate no network traffic.
+- First-run runtime auto-install only installs agent runtimes that an enabled provider runs on.
+  Node is always installed.
+- The account chip is hidden for a disabled provider. Its open sessions are kept but show a
+  "Provider disabled" placeholder with an **Enable** button. The default agent falls back to
+  an enabled provider's agent.
+- Remote windows follow the remote host's own toggles (host-owned state).
+
 ## Adding a provider
 
 1. **Manifest:** add the provider entry and its presets to `shared/providers.json`. If it reuses
@@ -97,7 +120,9 @@ presets are data.
 4. **Tests:** run `pnpm run test:provider-registry`, `pnpm run test:sidecar` and
    `pnpm run test:tauri-rust`. The manifest is validated by `validateProviderManifest` (JS) and
    by `providers.rs` (Rust).
-5. **Docs:** add the provider to the README's provider list.
+5. **Settings:** if the provider needs its own settings (accounts, API key), return a section for
+   its `auth` kind / key store from `sectionFor` in `SettingsPanel` (Settings → Providers).
+6. **Docs:** add the provider to the README's provider list.
 
 Never rename or remove an existing provider or preset id. Persisted workspaces, session markers
 and remote clients refer to them. To retire a preset, mark it `hidden`.

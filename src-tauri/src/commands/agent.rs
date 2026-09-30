@@ -5,6 +5,7 @@
 // pure `agent_supported_*` cores directly, which compile in the headless build.
 #[cfg(feature = "desktop")]
 use crate::commands::profile as profile_cmd;
+use crate::host_context::HostContext;
 #[cfg(feature = "desktop")]
 use crate::remote_client::RustRemoteClientState;
 #[cfg(feature = "desktop")]
@@ -15,7 +16,7 @@ use std::time::Duration;
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Manager, WebviewWindow};
 
-fn bat_debug_enabled() -> bool {
+pub(crate) fn bat_debug_enabled() -> bool {
     matches!(
         std::env::var("BAT_DEBUG").as_deref(),
         Ok("1") | Ok("true") | Ok("TRUE")
@@ -25,19 +26,21 @@ fn bat_debug_enabled() -> bool {
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn agent_get_supported_session_types(app: AppHandle, window: WebviewWindow) -> Value {
+    let ctx = HostContext::from_app(app.clone());
     if let Some(remote_result) = remote_supported_session_types(&app, &window).await {
-        return remote_result.unwrap_or_else(|_| agent_supported_session_type_ids());
+        return remote_result.unwrap_or_else(|_| agent_supported_session_type_ids(&ctx));
     }
-    agent_supported_session_type_ids()
+    agent_supported_session_type_ids(&ctx)
 }
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn agent_list_presets(app: AppHandle, window: WebviewWindow) -> Value {
+    let ctx = HostContext::from_app(app.clone());
     if let Some(remote_result) = remote_agent_presets(&app, &window).await {
-        return remote_result.unwrap_or_else(|_| agent_supported_session_presets());
+        return remote_result.unwrap_or_else(|_| agent_supported_session_presets(&ctx));
     }
-    agent_supported_session_presets()
+    agent_supported_session_presets(&ctx)
 }
 
 /// Response-time samples for the statistics page, in `[from_ms, to_ms]`.
@@ -123,24 +126,35 @@ fn is_remote_profile_window(app: &AppHandle, window: &WebviewWindow) -> bool {
         .unwrap_or(false)
 }
 
-pub fn agent_supported_session_type_ids() -> Value {
-    json!(agent_supported_session_type_ids_for_debug(
-        bat_debug_enabled()
-    ))
+/// Presets this host offers: hidden and (outside BAT_DEBUG) debug-only presets
+/// are left out, and so are presets of providers disabled in Settings →
+/// Providers (the host's settings.json, so remote clients see the host's choice).
+pub fn agent_supported_session_type_ids(ctx: &HostContext) -> Value {
+    let debug = bat_debug_enabled();
+    let enabled =
+        crate::providers::enabled_provider_ids(&crate::providers::provider_toggles(ctx), debug);
+    json!(agent_supported_session_type_ids_for(debug, &enabled))
 }
 
-pub fn agent_supported_session_presets() -> Value {
-    json!(agent_supported_session_presets_for_debug(
-        bat_debug_enabled()
-    ))
+pub fn agent_supported_session_presets(ctx: &HostContext) -> Value {
+    let debug = bat_debug_enabled();
+    let enabled =
+        crate::providers::enabled_provider_ids(&crate::providers::provider_toggles(ctx), debug);
+    json!(agent_supported_session_presets_for(debug, &enabled))
 }
 
-fn agent_supported_session_type_ids_for_debug(debug_enabled: bool) -> Vec<&'static str> {
-    crate::providers::offered_preset_ids(debug_enabled)
+fn agent_supported_session_type_ids_for(
+    debug_enabled: bool,
+    enabled_providers: &[&str],
+) -> Vec<&'static str> {
+    crate::providers::offered_preset_ids(debug_enabled, enabled_providers)
 }
 
-fn agent_supported_session_presets_for_debug(debug_enabled: bool) -> Vec<Value> {
-    agent_supported_session_type_ids_for_debug(debug_enabled)
+fn agent_supported_session_presets_for(
+    debug_enabled: bool,
+    enabled_providers: &[&str],
+) -> Vec<Value> {
+    agent_supported_session_type_ids_for(debug_enabled, enabled_providers)
         .into_iter()
         .filter_map(crate::providers::preset_metadata)
         .collect()
@@ -150,9 +164,11 @@ fn agent_supported_session_presets_for_debug(debug_enabled: bool) -> Vec<Value> 
 mod tests {
     use super::*;
 
+    const ALL_PROVIDERS: &[&str] = &["claude", "codex", "fugu"];
+
     #[test]
     fn preset_list_matches_supported_runtime_ids() {
-        let all = agent_supported_session_type_ids_for_debug(true);
+        let all = agent_supported_session_type_ids_for(true, ALL_PROVIDERS);
         assert!(all.contains(&"claude-code"));
         assert!(all.contains(&"claude-channel"));
         assert!(!all.contains(&"claude-code-v2"));
@@ -163,19 +179,19 @@ mod tests {
 
     #[test]
     fn supported_session_types_hide_debug_only_presets_without_debug() {
-        let regular = agent_supported_session_type_ids_for_debug(false);
+        let regular = agent_supported_session_type_ids_for(false, ALL_PROVIDERS);
         assert!(regular.contains(&"claude-code"));
         assert!(!regular.contains(&"claude-channel"));
         assert!(!regular.contains(&"claude-cli-agent"));
 
-        let debug = agent_supported_session_type_ids_for_debug(true);
+        let debug = agent_supported_session_type_ids_for(true, ALL_PROVIDERS);
         assert!(debug.contains(&"claude-channel"));
         assert!(debug.contains(&"claude-cli-agent"));
     }
 
     #[test]
     fn claude_cli_agent_preset_metadata_present_in_debug() {
-        let presets = agent_supported_session_presets_for_debug(true);
+        let presets = agent_supported_session_presets_for(true, ALL_PROVIDERS);
         assert!(presets.iter().any(|preset| {
             preset.get("id").and_then(Value::as_str) == Some("claude-cli-agent")
                 && preset.get("backend").and_then(Value::as_str) == Some("cli")
@@ -213,18 +229,18 @@ mod tests {
     fn preset_metadata_matches_legacy_fixture() {
         let fixture = legacy_fixture();
         assert_eq!(
-            agent_supported_session_presets_for_debug(false),
+            agent_supported_session_presets_for(false, ALL_PROVIDERS),
             legacy_presets_for(&fixture["visible"])
         );
         assert_eq!(
-            agent_supported_session_presets_for_debug(true),
+            agent_supported_session_presets_for(true, ALL_PROVIDERS),
             legacy_presets_for(&fixture["visibleDebug"])
         );
     }
 
     #[test]
     fn preset_metadata_contains_names_for_supported_ids() {
-        let presets = agent_supported_session_presets_for_debug(false);
+        let presets = agent_supported_session_presets_for(false, ALL_PROVIDERS);
         assert!(presets.iter().any(|preset| {
             preset.get("id").and_then(Value::as_str) == Some("codex-agent")
                 && preset.get("name").and_then(Value::as_str) == Some("Codex Agent")

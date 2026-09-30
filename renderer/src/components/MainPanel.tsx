@@ -7,8 +7,8 @@ import { PromptBox } from './PromptBox'
 import { getAgentPreset } from '../types/agent-presets'
 import { workspaceStore } from '../stores/workspace-store'
 import { WorktreeMergedChip } from './WorktreeMergedChip'
-import { isSdkAgentPreset, panelOfPreset } from '../../../shared/providers.mjs'
-import { type ProviderId } from '../../../shared/providers.mjs'
+import { getProvider, isPresetEnabled, isSdkAgentPreset, panelOfPreset, providerOfPreset, type ProviderId } from '../../../shared/providers.mjs'
+import { settingsStore, useSettings } from '../stores/settings-store'
 
 // Lazy load heavy components
 const ClaudeAgentPanel = lazy(() => import('./ClaudeAgentPanel').then(m => ({ default: m.ClaudeAgentPanel })))
@@ -38,6 +38,14 @@ export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, 
   const isSdkManaged = isSdkAgentPreset(terminal.agentPreset)
   const isClaudeCli = panel === 'claude-cli'
   const isCodexAgent = panel === 'codex-agent'
+  // A session whose provider was switched off in Settings → Providers keeps its
+  // data but shows a placeholder until the provider is enabled again. Remote
+  // windows follow the remote host, whose own toggles decide what it runs.
+  const providerToggles = useSettings(s => s.providers)
+  const sessionProvider = providerOfPreset(terminal.agentPreset)
+  const providerDisabled = !isRemoteConnected && !!sessionProvider
+    && !isPresetEnabled(terminal.agentPreset, providerToggles, settingsStore.providerToggleOptions())
+  const sessionProviderLabel = getProvider(sessionProvider)?.label ?? sessionProvider ?? ''
   const isClaudeCode = isSdkManaged
   const hasRuntimeError = !!terminal.runtimeError
   const agentConfig = isAgent ? getAgentPreset(terminal.agentPreset!) : null
@@ -196,6 +204,19 @@ export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, 
               isActive={isActive}
             />
           </Suspense>
+        ) : providerDisabled ? (
+          <div className="terminal-runtime-error-panel provider-disabled-panel">
+            <div className="terminal-runtime-error-title">
+              {t('providers.disabledTitle', { provider: sessionProviderLabel })}
+            </div>
+            <div className="terminal-runtime-error-message">{t('providers.disabledMessage')}</div>
+            <button
+              className="terminal-runtime-error-retry"
+              onClick={() => { if (sessionProvider) settingsStore.setProviderEnabled(sessionProvider, true) }}
+            >
+              {t('providers.enable', { provider: sessionProviderLabel })}
+            </button>
+          </div>
         ) : isClaudeChannelAgent ? (
           <Suspense fallback={<div className="loading-panel" />}>
             <ClaudeChannelAgentPanel
@@ -272,7 +293,7 @@ export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, 
           />
         )}
       </div>
-      {!isClaudeCode && !isClaudeChannelAgent && !isClaudeCliAgent && showPromptBox && (
+      {!isClaudeCode && !isClaudeChannelAgent && !isClaudeCliAgent && !providerDisabled && showPromptBox && (
         <PromptBox terminalId={terminal.id} />
       )}
     </div>

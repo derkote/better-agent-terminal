@@ -43,7 +43,12 @@
     "tabGeneral": "General",
     "tabAgent": "Agent",
     "tabRemote": "Remote",
-    "tabAccounts": "Accounts",
+    "tabProviders": "Providers",
+    "providersTitle": "Agent providers",
+    "providersHint": "Choose which agent providers this app offers. A disabled provider's session types are hidden, its usage is not polled and its runtime is not installed automatically. Existing sessions are kept.",
+    "providerSessionTypes": "Session types: {{types}}",
+    "providerDisabledHint": "Disabled: its session types are hidden.",
+    "providerLastEnabled": "At least one provider must stay enabled.",
     "tabRuntime": "Runtime",
     "tabAdvanced": "Advanced",
     "runtimeManager": "Runtime Manager",
@@ -702,5 +707,10 @@
     "imageAttached": "Image attached",
     "removeImage": "Remove image",
     "hint": "Ctrl+Enter to send \u00b7 Paste images with Ctrl+V \u00b7 \u2191\u2193 history"
+  },
+  "providers": {
+    "disabledTitle": "{{provider}} is disabled",
+    "disabledMessage": "This session's provider is turned off in Settings → Providers. The session is kept; enable the provider to use it again.",
+    "enable": "Enable {{provider}}"
   }
 }

@@ -146,6 +146,22 @@ Items can be reordered, colored, and toggled on/off via a drag-and-drop template
 - **Notifications** — Dock badge, sound, and system notifications on agent completion (configurable)
 - **Update notifications** — Automatic check for new releases on GitHub
 
+### Providers
+
+Agent providers are declared in one manifest, [`shared/providers.json`](shared/providers.json):
+
+| Provider | Session types | Sign-in |
+|---|---|---|
+| **Claude** | Claude Agent, Claude Agent (worktree), Claude CLI, Claude CLI (worktree) | Claude account (OAuth) |
+| **Codex** | Codex Agent, Codex Agent (worktree), Codex CLI | ChatGPT account or OpenAI API key |
+| **Fugu (Sakana)** | Codex Fugu Agent (`BAT_DEBUG` only) | Sakana API key |
+
+Turn providers on or off in **Settings → Providers**. A disabled provider's session types
+disappear from the new-terminal menus, its usage is not polled, and its runtime is not
+auto-installed. Open sessions of a disabled provider are kept and show an **Enable** button. At
+least one provider always stays enabled. See [docs/providers.md](docs/providers.md) for the
+manifest format and how to add a provider.
+
 ### Codex Agent
 
 Optional alternate agent backend powered by the [Codex app-server](https://developers.openai.com/codex/app-server), managed by the Rust host using the bundled `@openai/codex` runtime. Pick **Codex Agent** (or **Codex Agent (worktree)**) from the agent preset list when creating a terminal.

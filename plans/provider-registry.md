@@ -1,6 +1,6 @@
 # Provider registry
 
-Status: Phases 0 and 1 implemented (2026-09-30); Phase 2 pending.
+Status: Phases 0–2 implemented (2026-09-30).
 
 ## Goal
 
@@ -243,7 +243,7 @@ Split into reviewable commits by area:
    This is the only intended behaviour change in Phase 1, and it only affects the debug
    build.
 
-### Phase 2: enabling and disabling providers
+### Phase 2: enabling and disabling providers — done
 
 - Settings field and defaults, Rust reader, renderer store.
 - Filtering in the quick-pick, thumbnail menu, account chip, usage poller, runtime
@@ -252,6 +252,21 @@ Split into reviewable commits by area:
 - Settings → Providers tab. Absorbs the Claude accounts tab and the Fugu settings.
 - i18n strings in all four locales (`en`, `ja`, `zh-CN`, `zh-TW`).
 
+Implementation notes:
+- **Helpers:** `enabledProviderIds`, `isPresetEnabled`, `requiredRuntimes`,
+  `canDisableProvider` and `resolveDefaultAgentPreset` live in `shared/providers.mjs`
+  (`tests/provider-toggles.test.ts`). The host mirror is `providers::provider_toggles` /
+  `enabled_provider_ids`, which reads the `providers` key of `settings.json`.
+- **Host:** `agent_supported_session_*` take the `HostContext`, so remote clients see the host's
+  toggles.
+- **Renderer:** the pickers intersect the host list with the local toggles, so a change applies
+  immediately. The host list is refetched when the toggles change.
+- **Settings UI:** the tab is `ProvidersSettings.tsx`. `SettingsPanel` supplies each provider's
+  section by `auth` kind / `apiKeyStore`: the Claude accounts block for `claude-oauth`, and the
+  former Agent-tab Fugu key form for `codex-env`.
+- **Placeholder:** disabling a provider does not stop its running sessions. Their panels
+  unmount and show the placeholder; the backend session keeps running until closed.
+
 ## Documentation (updated in the same phase as the code)
 
 | Doc | Change | Phase |
@@ -259,7 +274,7 @@ Split into reviewable commits by area:
 | `plans/provider-registry.md` (this file) | status per phase | every phase |
 | `docs/providers.md` (new, done) | Manifest reference, kinds (`auth`, `usage`, `panel`), and **"Adding a provider" checklist**: manifest entry, adapter only if a new kind is needed, locales, tests, README row | 0, extended in 2 |
 | `CLAUDE.md` and `AGENTS.md` (done) | New § **Providers**: never compare against provider or preset id literals outside the registries; `shared/providers.json` is the source of truth; link to `docs/providers.md` | 0 |
-| `README.md` (phase 1 part done) | Agent presets line and Features: "providers are declared in one manifest". § Account & Usage: per-provider accounts and usage. New § **Providers**: supported providers, enabling/disabling them in Settings → Providers, and that disabled providers are not polled or installed | 1 (accounts/usage wording), 2 (Providers section) |
+| `README.md` (done) | Agent presets line and Features: "providers are declared in one manifest". § Account & Usage: per-provider accounts and usage. New § **Providers**: supported providers, enabling/disabling them in Settings → Providers, and that disabled providers are not polled or installed | 1 (accounts/usage wording), 2 (Providers section) |
 
 ## Verification
 

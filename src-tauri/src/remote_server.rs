@@ -2721,8 +2721,8 @@ fn invoke_rust_for_remote(
         "app:new-window" | "app:check-update" | "app:install-update" | "app:relaunch" => {
             Err(format!("{channel}: not supported on a headless bat-server"))
         }
-        "agent:get-supported-session-types" => Ok(agent_cmd::agent_supported_session_type_ids()),
-        "agent:list-presets" => Ok(agent_cmd::agent_supported_session_presets()),
+        "agent:get-supported-session-types" => Ok(agent_cmd::agent_supported_session_type_ids(ctx)),
+        "agent:list-presets" => Ok(agent_cmd::agent_supported_session_presets(ctx)),
         "claude:start-session" => {
             let options = params.get("options").cloned().unwrap_or(Value::Null);
             let maybe_options = Some(options.clone());

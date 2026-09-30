@@ -43,7 +43,12 @@
     "tabGeneral": "一般",
     "tabAgent": "Agent",
     "tabRemote": "遠端",
-    "tabAccounts": "帳號",
+    "tabProviders": "提供者",
+    "providersTitle": "代理提供者",
+    "providersHint": "選擇此應用程式提供的代理提供者。已停用的提供者會隱藏其工作階段類型，不再輪詢用量，也不會自動安裝其執行環境。現有工作階段會保留。",
+    "providerSessionTypes": "工作階段類型：{{types}}",
+    "providerDisabledHint": "已停用：其工作階段類型已隱藏。",
+    "providerLastEnabled": "至少需要保留一個已啟用的提供者。",
     "tabRuntime": "執行環境",
     "tabAdvanced": "進階",
     "runtimeManager": "執行環境管理員",
@@ -700,5 +705,10 @@
     "imageAttached": "已附加圖片",
     "removeImage": "移除圖片",
     "hint": "Ctrl+Enter 傳送 · Ctrl+V 貼上圖片 · ↑↓ 瀏覽歷史"
+  },
+  "providers": {
+    "disabledTitle": "{{provider}} 已停用",
+    "disabledMessage": "此工作階段的提供者已在「設定 → 提供者」中停用。工作階段會保留；啟用該提供者即可繼續使用。",
+    "enable": "啟用 {{provider}}"
   }
 }

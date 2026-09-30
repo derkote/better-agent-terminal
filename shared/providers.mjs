@@ -264,3 +264,61 @@ export function presetMenuRank(presetId) {
   const index = manifest.menuOrder.indexOf(presetId)
   return index === -1 ? manifest.menuOrder.length : index
 }
+
+// --- Enabled providers -------------------------------------------------------
+// `toggles` is the `providers` setting: { [providerId]: { enabled: boolean } }.
+// Entries that are absent or malformed fall back to the provider's
+// defaultEnabled. Debug-only providers only count when `debug` is set.
+
+function toggledOn(provider, toggles) {
+  const enabled = toggles?.[provider.id]?.enabled
+  return typeof enabled === 'boolean' ? enabled : provider.defaultEnabled
+}
+
+/**
+ * Ids of the providers the user has enabled, in display order. A setting that
+ * would leave no provider enabled falls back to the defaults, so the app never
+ * ends up without an agent.
+ */
+export function enabledProviderIds(toggles, { debug = false } = {}) {
+  const available = manifest.providers.filter(provider => debug || !provider.debugOnly)
+  const enabled = available.filter(provider => toggledOn(provider, toggles))
+  const chosen = enabled.length > 0 ? enabled : available.filter(provider => provider.defaultEnabled)
+  return chosen.map(provider => provider.id)
+}
+
+export function isProviderEnabled(providerId, toggles, options) {
+  return enabledProviderIds(toggles, options).includes(providerId)
+}
+
+/** Whether a preset may be offered: provider-less and unknown presets always are. */
+export function isPresetEnabled(presetId, toggles, options) {
+  const provider = providerOfPreset(presetId)
+  return provider == null || isProviderEnabled(provider, toggles, options)
+}
+
+/** Agent CLI runtimes the enabled providers need (the Node runtime is always needed). */
+export function requiredRuntimes(toggles, options) {
+  return new Set(enabledProviderIds(toggles, options).map(id => providersById.get(id).runtime))
+}
+
+/** Whether a provider may be switched off: the last enabled provider may not. */
+export function canDisableProvider(providerId, toggles, options) {
+  const enabled = enabledProviderIds(toggles, options)
+  return !enabled.includes(providerId) || enabled.length > 1
+}
+
+/**
+ * The agent preset to use as a default: `preferred` when its provider is
+ * enabled, otherwise the first offered SDK agent preset of an enabled provider
+ * (app default first).
+ */
+export function resolveDefaultAgentPreset(preferred, toggles, options) {
+  const offered = presetId => {
+    const preset = presetsById.get(presetId)
+    return !!preset && !preset.hidden && (options?.debug || !preset.debug) && isPresetEnabled(presetId, toggles, options)
+  }
+  if (preferred && offered(preferred)) return preferred
+  const candidates = [manifest.defaultPreset, ...manifest.presets.map(preset => preset.id)]
+  return candidates.find(id => offered(id) && isSdkAgentPreset(id) && !isWorktreePreset(id)) ?? manifest.defaultPreset
+}

@@ -596,13 +596,23 @@ pub fn start(ctx: HostContext) {
             // Per-provider due times on a coarse scheduler tick, so one
             // provider's backoff (e.g. Claude not logged in → 10 min retry)
             // never starves another's cadence. Providers come from
-            // shared/providers.json and are polled by their `usage` kind.
+            // shared/providers.json and are polled by their `usage` kind;
+            // providers disabled in Settings → Providers are not polled at all.
             let tick = Duration::from_secs(30);
             let mut due: HashMap<&'static str, std::time::Instant> = HashMap::new();
             loop {
                 let now = std::time::Instant::now();
+                let enabled = crate::providers::enabled_provider_ids(
+                    &crate::providers::provider_toggles(&ctx),
+                    crate::commands::agent::bat_debug_enabled(),
+                );
                 for provider in crate::providers::providers() {
                     let id = provider.id.as_str();
+                    if !enabled.contains(&id) {
+                        // Re-enabling polls it on the next tick.
+                        due.remove(id);
+                        continue;
+                    }
                     if due.get(id).is_some_and(|next| now < *next) {
                         continue;
                     }

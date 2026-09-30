@@ -6,8 +6,10 @@
 // the host looks presets up here instead of comparing id literals.
 // See docs/providers.md.
 
+use crate::host_context::HostContext;
 use serde::Deserialize;
 use serde_json::{Map, Value};
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 const PROVIDER_MANIFEST_JSON: &str = include_str!(concat!(
@@ -139,13 +141,82 @@ pub fn sdk_runtime_family(preset_id: &str) -> Option<&'static str> {
     }
 }
 
+/// The `providers` setting (settings.json): provider id → enabled. Entries
+/// that are absent or malformed are left out, so they use defaultEnabled.
+pub fn provider_toggles(ctx: &HostContext) -> HashMap<String, bool> {
+    let Some(dir) = ctx.data_dir_opt() else {
+        return HashMap::new();
+    };
+    let Ok(raw) = std::fs::read_to_string(dir.join("settings.json")) else {
+        return HashMap::new();
+    };
+    parse_provider_toggles(&raw)
+}
+
+fn parse_provider_toggles(settings_json: &str) -> HashMap<String, bool> {
+    let Ok(settings) = serde_json::from_str::<Value>(settings_json) else {
+        return HashMap::new();
+    };
+    settings
+        .get("providers")
+        .and_then(Value::as_object)
+        .map(|providers| {
+            providers
+                .iter()
+                .filter_map(|(id, toggle)| {
+                    let enabled = toggle.get("enabled")?.as_bool()?;
+                    Some((id.clone(), enabled))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Ids of the enabled providers, in display order. Debug-only providers only
+/// count when `debug_enabled`; a setting that would leave none enabled falls
+/// back to the defaults. Mirrors `enabledProviderIds` in shared/providers.mjs.
+pub fn enabled_provider_ids(
+    toggles: &HashMap<String, bool>,
+    debug_enabled: bool,
+) -> Vec<&'static str> {
+    let available: Vec<&'static ProviderDefinition> = providers()
+        .iter()
+        .filter(|provider| debug_enabled || !provider.debug_only)
+        .collect();
+    let enabled: Vec<&'static str> = available
+        .iter()
+        .filter(|provider| {
+            toggles
+                .get(&provider.id)
+                .copied()
+                .unwrap_or(provider.default_enabled)
+        })
+        .map(|provider| provider.id.as_str())
+        .collect();
+    if !enabled.is_empty() {
+        return enabled;
+    }
+    available
+        .iter()
+        .filter(|provider| provider.default_enabled)
+        .map(|provider| provider.id.as_str())
+        .collect()
+}
+
 /// Preset ids offered to users, in manifest order. Hidden presets are never
-/// offered; debug-only presets only when `debug_enabled`.
-pub fn offered_preset_ids(debug_enabled: bool) -> Vec<&'static str> {
+/// offered, debug-only presets only when `debug_enabled`, and presets of a
+/// disabled provider not at all (provider-less presets always are).
+pub fn offered_preset_ids(debug_enabled: bool, enabled_providers: &[&str]) -> Vec<&'static str> {
     manifest()
         .presets
         .iter()
         .filter(|preset| !preset.hidden && (debug_enabled || !preset.debug))
+        .filter(|preset| {
+            preset
+                .provider
+                .as_deref()
+                .is_none_or(|provider| enabled_providers.contains(&provider))
+        })
         .map(|preset| preset.id.as_str())
         .collect()
 }
@@ -243,10 +314,42 @@ mod tests {
         assert_eq!(polled, ["claude", "codex"]);
     }
 
+    const ALL: &[&str] = &["claude", "codex", "fugu"];
+
     #[test]
     fn hidden_presets_are_never_offered() {
-        assert!(!offered_preset_ids(true).contains(&"claude-code-v2"));
-        assert!(!offered_preset_ids(false).contains(&"codex-fugu"));
-        assert!(offered_preset_ids(true).contains(&"codex-fugu"));
+        assert!(!offered_preset_ids(true, ALL).contains(&"claude-code-v2"));
+        assert!(!offered_preset_ids(false, ALL).contains(&"codex-fugu"));
+        assert!(offered_preset_ids(true, ALL).contains(&"codex-fugu"));
+    }
+
+    #[test]
+    fn disabled_providers_presets_are_not_offered() {
+        let offered = offered_preset_ids(false, &["claude"]);
+        assert!(offered.contains(&"claude-code"));
+        assert!(offered.contains(&"none"));
+        assert!(!offered.contains(&"codex-agent"));
+        assert!(!offered.contains(&"codex-cli"));
+    }
+
+    #[test]
+    fn toggles_parse_and_resolve() {
+        let toggles = parse_provider_toggles(
+            r#"{"providers":{"codex":{"enabled":false},"claude":{"enabled":"x"},"fugu":null}}"#,
+        );
+        assert_eq!(toggles.get("codex"), Some(&false));
+        assert_eq!(toggles.get("claude"), None);
+        assert_eq!(enabled_provider_ids(&toggles, false), ["claude"]);
+        assert_eq!(enabled_provider_ids(&toggles, true), ["claude", "fugu"]);
+        assert_eq!(
+            enabled_provider_ids(&HashMap::new(), false),
+            ["claude", "codex"]
+        );
+        assert!(parse_provider_toggles("not json").is_empty());
+        // Nothing left enabled: fall back to the defaults.
+        let all_off = parse_provider_toggles(
+            r#"{"providers":{"claude":{"enabled":false},"codex":{"enabled":false}}}"#,
+        );
+        assert_eq!(enabled_provider_ids(&all_off, false), ["claude", "codex"]);
     }
 }

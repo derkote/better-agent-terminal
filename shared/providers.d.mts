@@ -80,3 +80,13 @@ export function supportsPtyImagePaste(presetId: string | null | undefined): bool
 export function defaultModelOfPreset(presetId: string | null | undefined): string | undefined
 export function providerAgentName(presetId: string | null | undefined): string | undefined
 export function presetMenuRank(presetId: string): number
+
+/** The `providers` setting: per-provider enable toggles. */
+export type ProviderToggles = Record<ProviderId, { enabled?: boolean } | undefined>
+export interface ProviderToggleOptions { debug?: boolean }
+export function enabledProviderIds(toggles: ProviderToggles | null | undefined, options?: ProviderToggleOptions): ProviderId[]
+export function isProviderEnabled(providerId: ProviderId, toggles: ProviderToggles | null | undefined, options?: ProviderToggleOptions): boolean
+export function isPresetEnabled(presetId: string | null | undefined, toggles: ProviderToggles | null | undefined, options?: ProviderToggleOptions): boolean
+export function requiredRuntimes(toggles: ProviderToggles | null | undefined, options?: ProviderToggleOptions): Set<SdkRuntimeFamily>
+export function canDisableProvider(providerId: ProviderId, toggles: ProviderToggles | null | undefined, options?: ProviderToggleOptions): boolean
+export function resolveDefaultAgentPreset(preferred: string | null | undefined, toggles: ProviderToggles | null | undefined, options?: ProviderToggleOptions): PresetId

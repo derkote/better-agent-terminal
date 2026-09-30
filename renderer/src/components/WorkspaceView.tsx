@@ -1,10 +1,10 @@
 import { host } from '../host-api'
 import { v4 as uuidv4 } from 'uuid'
-import { useEffect, useCallback, useState, lazy, memo, Suspense, useRef } from 'react'
+import { useEffect, useCallback, useMemo, useState, lazy, memo, Suspense, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Workspace, TerminalInstance, EnvVariable, CreatePtyOptions } from '../types'
 import { workspaceStore } from '../stores/workspace-store'
-import { settingsStore } from '../stores/settings-store'
+import { settingsStore, useSettings } from '../stores/settings-store'
 import { ThumbnailBar } from './ThumbnailBar'
 import { CloseConfirmDialog } from './CloseConfirmDialog'
 import { LoginDialog } from './LoginDialog'
@@ -21,7 +21,7 @@ import {
 } from '../utils/remote-auth'
 import { touchBoundedLru } from '../utils/bounded-lru'
 import { shouldKeepTerminalPanelMounted } from '../utils/workspace-mounts'
-import { apiVersionOfPreset, apiVersionSwitchOf, getDefaultPreset, getProvider, isPtyPreset, isSdkAgentPreset, isWorktreePreset, listProviders, panelOfPreset, providerAgentName, ptyAutoCommand, sdkRuntimeFamilyOfPreset, type ProviderId, type SdkRuntimeFamily } from '../../../shared/providers.mjs'
+import { apiVersionOfPreset, apiVersionSwitchOf, getDefaultPreset, getProvider, isPresetEnabled, isPtyPreset, isSdkAgentPreset, isWorktreePreset, listPresets, listProviders, panelOfPreset, providerAgentName, ptyAutoCommand, resolveDefaultAgentPreset, sdkRuntimeFamilyOfPreset, type ProviderId, type SdkRuntimeFamily } from '../../../shared/providers.mjs'
 import { accountAdapterFor, type AccountChip, type AccountMenuEntry } from '../providers/accounts'
 import { accountChipProviderOf, accountSwitchedEvent, cliRuntimeOf, usageProviderOf } from '../providers/account-routing'
 
@@ -346,8 +346,10 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
     return () => { cancelled = true }
   }, [isRemoteConnected, remoteHostLabel])
 
-  // Fetch the host-supported preset list once. Refreshes on profile switch
-  // because workspaces re-mount when the active profile changes.
+  // Fetch the host-supported preset list. Refreshes on profile switch because
+  // workspaces re-mount when the active profile changes, and when the provider
+  // toggles change (the host filters out disabled providers' presets).
+  const providerToggles = useSettings(s => s.providers)
   useEffect(() => {
     let cancelled = false
     const listSupportedSessionTypes = host.agent.getSupportedSessionTypes || host.agent.listPresets
@@ -355,7 +357,17 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
       .then(ids => { if (!cancelled) setSupportedPresetIds(ids) })
       .catch(() => { if (!cancelled) setSupportedPresetIds(null) })
     return () => { cancelled = true }
-  }, [])
+  }, [providerToggles])
+  // Presets offered in the pickers: what the host supports, minus presets of
+  // providers disabled in Settings → Providers. Applied locally too so a toggle
+  // takes effect before the host list is refetched. Remote windows follow the
+  // remote host's own toggles, already applied to its list.
+  const offeredPresetIds = useMemo(() => {
+    if (isRemoteConnected) return supportedPresetIds
+    const options = settingsStore.providerToggleOptions()
+    return (supportedPresetIds ?? listPresets().map(preset => preset.id))
+      .filter(id => isPresetEnabled(id, providerToggles, options))
+  }, [supportedPresetIds, providerToggles, isRemoteConnected])
 
   // Detect git repo, GitHub remote, and Procfiles
   useEffect(() => {
@@ -508,7 +520,10 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
     }
     const provider = getProvider(accountChipProviderOf(preset))
     const adapter = accountAdapterFor(provider?.id)
-    if (!provider || !adapter || !accountTerminal) {
+    // Disabled providers show no chip (their sessions show a placeholder).
+    // Remote windows follow the remote host, whose toggles apply there.
+    const disabled = !!provider && !isRemoteConnected && !settingsStore.isProviderEnabled(provider.id)
+    if (!provider || !adapter || !accountTerminal || disabled) {
       setAccountChip(null)
       return
     }
@@ -518,7 +533,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
       void host.debug.log(`[WorkspaceView] failed to load ${provider.label} account info: ${errorMessage(error)}`)
       setAccountChip(adapter.fallback(provider))
     }
-  }, [accountTerminal?.id, accountTerminal?.agentPreset, focusedTerminalId])
+  }, [accountTerminal?.id, accountTerminal?.agentPreset, focusedTerminalId, isRemoteConnected, providerToggles])
 
   useEffect(() => {
     if (!isActive) return
@@ -735,8 +750,13 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
         // No terminals: create defaults from settings
         const terminalCount = settings.defaultTerminalCount || 1
         const createAgentTerminal = settings.createDefaultAgentTerminal === true
+        // Skip a default whose provider is disabled in Settings → Providers.
         const defaultAgent = createAgentTerminal
-          ? (workspace.defaultAgent || settings.defaultAgent || getDefaultPreset().id)
+          ? resolveDefaultAgentPreset(
+            workspace.defaultAgent || settings.defaultAgent || getDefaultPreset().id,
+            settings.providers,
+            settingsStore.providerToggleOptions(),
+          )
           : 'none'
 
         if (createAgentTerminal) {
@@ -1406,7 +1426,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
         agentPresets={getVisiblePresets().filter(p =>
           p.id !== 'none'
           && (!p.needsGitRepo || isGitRepo)
-          && (supportedPresetIds === null || supportedPresetIds.includes(p.id))
+          && (offeredPresetIds === null || offeredPresetIds.includes(p.id))
         )}
         onReorder={handleReorderTerminals}
         onCloseTerminal={handleCloseTerminal}
@@ -1446,7 +1466,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
       {showQuickPick && (
         <NewTerminalQuickPick
           isGitRepo={isGitRepo}
-          supportedPresetIds={supportedPresetIds}
+          supportedPresetIds={offeredPresetIds}
           onSelect={handleQuickPickSelect}
           onClose={() => setShowQuickPick(false)}
         />
