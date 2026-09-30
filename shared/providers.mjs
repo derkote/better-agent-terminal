@@ -320,5 +320,10 @@ export function resolveDefaultAgentPreset(preferred, toggles, options) {
   }
   if (preferred && offered(preferred)) return preferred
   const candidates = [manifest.defaultPreset, ...manifest.presets.map(preset => preset.id)]
-  return candidates.find(id => offered(id) && isSdkAgentPreset(id) && !isWorktreePreset(id)) ?? manifest.defaultPreset
+  return candidates.find(id => offered(id) && isSdkAgentPreset(id) && !isWorktreePreset(id))
+    // No enabled SDK agent at all: any other offered preset of an enabled
+    // provider, then the plain terminal. Never a disabled provider's preset.
+    ?? candidates.find(id => offered(id) && providerOfPreset(id) != null && !isWorktreePreset(id))
+    ?? candidates.find(id => offered(id) && providerOfPreset(id) === null)
+    ?? manifest.defaultPreset
 }
