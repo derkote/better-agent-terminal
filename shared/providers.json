@@ -1,5 +1,20 @@
 {
   "schemaVersion": 1,
+  "defaultPreset": "claude-code",
+  "runtimeDefaultPresets": {
+    "claude": "claude-code",
+    "codex": "codex-agent"
+  },
+  "menuOrder": [
+    "claude-code",
+    "claude-channel",
+    "codex-agent",
+    "claude-cli",
+    "codex-cli",
+    "claude-code-worktree",
+    "codex-agent-worktree",
+    "claude-cli-worktree"
+  ],
   "providers": [
     {
       "id": "claude",
@@ -21,7 +36,8 @@
       "auth": "api-key",
       "usage": "none",
       "defaultEnabled": true,
-      "debugOnly": true
+      "debugOnly": true,
+      "defaultModel": "fugu"
     }
   ],
   "presets": [
@@ -34,7 +50,8 @@
       "color": "#d97706",
       "command": "claude --continue",
       "suggested": true,
-      "backend": "sdk"
+      "backend": "sdk",
+      "apiVersionSwitch": "claude-code-v2"
     },
     {
       "id": "claude-code-v2",
@@ -45,7 +62,9 @@
       "icon": "✦",
       "color": "#eab308",
       "debug": true,
-      "backend": "sdk"
+      "backend": "sdk",
+      "apiVersion": "v2",
+      "apiVersionSwitch": "claude-code"
     },
     {
       "id": "claude-channel",
@@ -65,7 +84,8 @@
       "icon": "◈",
       "color": "#d97706",
       "debug": true,
-      "backend": "cli"
+      "backend": "cli",
+      "ptyImagePaste": true
     },
     {
       "id": "claude-code-worktree",
@@ -85,7 +105,8 @@
       "icon": "▶",
       "color": "#d97706",
       "suggested": true,
-      "backend": "cli"
+      "backend": "cli",
+      "ptyImagePaste": true
     },
     {
       "id": "claude-cli-worktree",
@@ -95,7 +116,8 @@
       "icon": "▶",
       "color": "#22c55e",
       "backend": "cli",
-      "needsGitRepo": true
+      "needsGitRepo": true,
+      "ptyImagePaste": true
     },
     {
       "id": "codex-agent",
@@ -104,7 +126,10 @@
       "name": "Codex Agent",
       "icon": "⬡",
       "color": "#10a37f",
-      "backend": "sdk"
+      "backend": "sdk",
+      "aliases": [
+        "openai-agent"
+      ]
     },
     {
       "id": "codex-agent-worktree",
@@ -133,7 +158,12 @@
       "name": "Codex CLI",
       "icon": "▶",
       "color": "#10a37f",
-      "backend": "pty"
+      "backend": "pty",
+      "ptyImagePaste": true,
+      "ptyCommand": {
+        "default": "codex",
+        "bypassPermissions": "codex --yolo"
+      }
     },
     {
       "id": "none",

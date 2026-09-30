@@ -18,8 +18,14 @@ that still do are being moved over; see [`plans/provider-registry.md`](../plans/
 ```jsonc
 {
   "schemaVersion": 1,
+  "defaultPreset": "claude-code",           // app-wide default for new agent terminals
+  "runtimeDefaultPresets": {                 // preset used when a session is opened on a runtime,
+    "claude": "claude-code",                 // e.g. by a Claude ↔ Codex handoff
+    "codex": "codex-agent"
+  },
+  "menuOrder": [ /* preset ids; new-session menu order, unlisted presets sort after, by name */ ],
   "providers": [ /* ordered; this order is the display order */ ],
-  "presets":   [ /* ordered; this order is the picker order */ ]
+  "presets":   [ /* ordered; the order of AGENT_PRESETS and agent:list-presets */ ]
 }
 ```
 
@@ -33,6 +39,7 @@ that still do are being moved over; see [`plans/provider-registry.md`](../plans/
 | `usage` | `anthropic-oauth` \| `codex-rate-limits` \| `none` | Which usage/rate-limit adapter polls it |
 | `defaultEnabled` | boolean | Initial state of the provider toggle |
 | `debugOnly` | boolean? | Only surfaced when `BAT_DEBUG` is set |
+| `defaultModel` | string? | Model new sessions start with, instead of the runtime's configured default (Fugu: `fugu`) |
 
 ### Preset
 
@@ -48,9 +55,15 @@ that still do are being moved over; see [`plans/provider-registry.md`](../plans/
 | `suggested` | boolean? | Marked as recommended in pickers |
 | `backend` | `sdk` \| `channel` \| `cli` \| `pty`? | Legacy backend hint consumed by the preset menus |
 | `needsGitRepo` | boolean? | Worktree presets; only offered inside a git repository |
+| `aliases` | string[]? | Retired ids that persisted data may still carry; resolved on load (`openai-agent` → `codex-agent`) |
+| `apiVersion` | `v1` \| `v2`? | SDK API version the preset runs (default `v1`) |
+| `apiVersionSwitch` | preset id? | The same agent on the other API version (the V1/V2 toggle) |
+| `ptyCommand` | `{ default, bypassPermissions? }`? | Auto-start command for PTY presets; `bypassPermissions` is used when the bypass-permissions setting is on. Takes precedence over `command`. |
+| `ptyImagePaste` | boolean? | The CLI in the PTY accepts pasted images |
 
-`provider`, `panel` and `hidden` are registry-only keys. The host strips them from the metadata it
-serves on `agent:list-presets`, whose shape predates the registry.
+Only the presentation fields (`id`, `name`, `icon`, `color`, `command`, `debug`, `suggested`,
+`backend`, `needsGitRepo`) are served on `agent:list-presets`, whose shape predates the registry.
+Every other key is registry-only.
 
 Kinds (`auth`, `usage`, `panel`) are code. The allowed values are listed in `shared/providers.mjs`
 (`AUTH_KINDS`, `USAGE_KINDS`, `PANEL_KINDS`) and mirrored in `providers.d.mts`. Providers and

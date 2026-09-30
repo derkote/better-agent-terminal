@@ -1,6 +1,6 @@
 # Provider registry
 
-Status: Phase 0 implemented (2026-09-30); Phases 1–2 pending.
+Status: Phase 0 and Phase 1.1 implemented (2026-09-30); Phase 1.2–1.4 and Phase 2 pending.
 
 ## Goal
 
@@ -184,9 +184,25 @@ must pass the full gate (see [Verification](#verification)) and includes its doc
 
 Split into reviewable commits by area:
 
-1. **Presets and panel routing:** `MainPanel`, `workspace-store` (`sdkSessionRuntimeFamily`),
+1. **Presets and panel routing (done):** `MainPanel`, `workspace-store` (`sdkSessionRuntimeFamily`),
    `agent-preset-menu`, `agent-profiles`, `settings-store`, `TerminalPanel`,
-   `ClaudeCliPanel`, both agent panels, sidecar `codex.mjs`.
+   `ClaudeCliPanel`, both agent panels, sidecar `codex.mjs`. `AgentPresetId` widened to
+   `string`. The remaining preset-specific data moved into the manifest: `defaultPreset`,
+   `runtimeDefaultPresets`, `menuOrder`, and on presets `aliases`, `apiVersion` /
+   `apiVersionSwitch`, `ptyCommand`, `ptyImagePaste`; on providers `defaultModel`.
+
+   Intended behaviour changes, all of them places where a hand-written id list had drifted:
+   - **Fugu** (`codex-fugu`, debug only) was missing from several lists:
+     - restoring a workspace or creating the default agent terminal also started a stray PTY
+       for it;
+     - closing it went through `pty.kill` instead of `claude.stopSession`;
+     - Restart went through `pty.restart` instead of restarting the session;
+     - it did not get the Codex sandbox, approval and effort params, so it ignored the
+       bypass-permissions default.
+
+     It now takes the Codex agent path everywhere.
+   - **Claude Agent (Worktree)** now shows the right-sidebar Skills tab like the other Claude
+     agent presets. Previously only `claude-code` and `claude-code-v2` were listed.
 2. **Accounts and login:** `WorkspaceView` `refreshAccountChip` / `handleAccountSwitch` /
    `handleLogin` / `handleLoginCancel` become one adapter map. `LoginDialog`, `remote-auth`,
    `App.tsx` `onAccountChanged`, `notification-store`, `notification.rs`

@@ -13,6 +13,7 @@ import { checkUpdatesNow, getUpdateState, subscribeUpdate } from '../lib/auto-up
 import { CLAUDE_BUILTIN_MODELS } from '../utils/claude-model-presets'
 import { CODEX_MODELS } from '../utils/codex-models'
 import { LoginDialog } from './LoginDialog'
+import { getDefaultPreset } from '../../../shared/providers.mjs'
 
 interface SettingsPanelProps {
   onClose: () => void
@@ -176,7 +177,7 @@ export function SettingsPanel({ onClose, isRemoteProfile = false, remoteOrigin =
   const visibleAgentPresets = getVisiblePresets(isDebugMode).filter(p => p.id !== 'none')
   const defaultAgentValue = visibleAgentPresets.some(p => p.id === settings.defaultAgent)
     ? settings.defaultAgent
-    : 'claude-code'
+    : getDefaultPreset().id
   const openExternal = useCallback((url: string) => {
     Promise.resolve(host.shell.openExternal(url)).catch(() => window.open(url))
   }, [])

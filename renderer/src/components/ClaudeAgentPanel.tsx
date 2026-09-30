@@ -47,6 +47,7 @@ import { buildAgentTaskTree, findAgentNode, formatAgentNodeElapsed, summarizeAge
 import { bindPanelActiveEvent, usePanelActivation, usePanelActiveEffect, type PanelActivation } from '../utils/panel-activation'
 import { prepareFilePickerResults, type FilePickerSearchEntry } from '../utils/file-picker-search'
 import { buildTranscriptHandoffPrompt, codexPermissionsForClaudeHandoff, type TranscriptSnapshot } from '../utils/agent-context-transfer'
+import { apiVersionOfPreset, defaultPresetForRuntime, isWorktreePreset, sdkRuntimeFamilyOfPreset } from '../../../shared/providers.mjs'
 
 interface SessionMeta {
   model?: string
@@ -308,9 +309,9 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
   const { t, i18n } = useTranslation()
   // Determine backend/session flavor from agentPreset
   const terminal = workspaceStore.getState().terminals.find(t => t.id === sessionId)
-  const isCodexSession = targetAgent === 'codex' || terminal?.agentPreset === 'codex-agent'
-  const isV2Session = terminal?.agentPreset === 'claude-code-v2'
-  const isWorktreeSession = terminal?.agentPreset === 'claude-code-worktree'
+  const isCodexSession = targetAgent === 'codex' || sdkRuntimeFamilyOfPreset(terminal?.agentPreset) === 'codex'
+  const isV2Session = apiVersionOfPreset(terminal?.agentPreset) === 'v2'
+  const isWorktreeSession = isWorktreePreset(terminal?.agentPreset)
   const normalizedAgentParams = normalizeAgentParams(terminal?.agentPreset, terminal?.agentParams)
   const [messages, setMessages] = useState<MessageItem[]>([])
   // Per-tool render-helper cache. Avoids rerunning regex/split over large
@@ -2290,8 +2291,8 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
       const terminalState = workspaceStore.getState().terminals.find(t => t.id === sessionId)
       const savedSdkSessionId = terminalState?.sdkSessionId
       const savedModel = normalizeClaudeModelSelection(terminalState?.model)
-      const apiVersion = terminalState?.agentPreset === 'claude-code-v2' ? 'v2' as const : 'v1' as const
-      const useWorktree = terminalState?.agentPreset === 'claude-code-worktree' || !!terminalState?.worktreePath
+      const apiVersion = apiVersionOfPreset(terminalState?.agentPreset)
+      const useWorktree = isWorktreePreset(terminalState?.agentPreset) || !!terminalState?.worktreePath
       const globalSettings = settingsStore.getSettings()
       const effectiveModel = normalizeClaudeModelSelection(currentModel || savedModel || globalSettings.defaultClaudeModel)
       const effectiveEffortMode = effortLevel || globalSettings.defaultEffort || 'high'
@@ -2933,7 +2934,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
       setAttachedImages([])
     }
 
-    const newTerminal = workspaceStore.addTerminal(workspaceId, 'claude-code' as AgentPresetId)
+    const newTerminal = workspaceStore.addTerminal(workspaceId, defaultPresetForRuntime('claude') as AgentPresetId)
     dlog(`${tag} newTerminal=${newTerminal.id.slice(0, 8)}`)
     workspaceStore.setTerminalSdkSessionId(newTerminal.id, result.newSdkSessionId)
     if (currentModel) {
@@ -2977,7 +2978,8 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
       const model = settings.defaultCodexModel || undefined
       const effort = settings.defaultCodexEffort || 'high'
       const handoffPermissions = codexPermissionsForClaudeHandoff(permissionMode)
-      const target = workspaceStore.addTerminal(workspaceId, 'codex-agent' as AgentPresetId, {
+      const codexPreset = defaultPresetForRuntime('codex') as AgentPresetId
+      const target = workspaceStore.addTerminal(workspaceId, codexPreset, {
         id: uuidv4(),
         cwd: snapshot.cwd,
         focus: false,
@@ -2994,7 +2996,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
         cwd: snapshot.cwd,
         model,
         effort,
-        agentPreset: 'codex-agent',
+        agentPreset: codexPreset,
         codexSandboxMode: handoffPermissions.sandboxMode,
         codexApprovalPolicy: handoffPermissions.approvalPolicy,
       }) as { sdkSessionId?: string } | null

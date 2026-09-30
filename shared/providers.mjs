@@ -73,6 +73,38 @@ function validatePresets(presets, providerIds, errors) {
   }
 }
 
+function validatePresetLinks(presets, errors) {
+  if (!Array.isArray(presets)) return
+  const ids = new Set(presets.map(preset => preset?.id))
+  const aliases = new Set()
+  for (const preset of presets) {
+    for (const alias of preset?.aliases ?? []) {
+      if (ids.has(alias) || aliases.has(alias)) errors.push(`preset "${preset.id}" alias "${alias}" collides with another id or alias`)
+      aliases.add(alias)
+    }
+    if (preset?.apiVersionSwitch !== undefined && !ids.has(preset.apiVersionSwitch)) {
+      errors.push(`preset "${preset.id}" has unknown apiVersionSwitch "${preset.apiVersionSwitch}"`)
+    }
+    if (preset?.ptyCommand !== undefined && !isNonEmptyString(preset.ptyCommand?.default)) {
+      errors.push(`preset "${preset.id}" ptyCommand needs a default command`)
+    }
+  }
+}
+
+function validateTopLevelRefs(candidate, errors) {
+  const presets = Array.isArray(candidate?.presets) ? candidate.presets : []
+  const byId = new Map(presets.map(preset => [preset?.id, preset]))
+  if (!byId.has(candidate?.defaultPreset)) errors.push(`defaultPreset "${candidate?.defaultPreset}" is not a declared preset`)
+  for (const [family, presetId] of Object.entries(candidate?.runtimeDefaultPresets ?? {})) {
+    if (SDK_RUNTIME_FAMILY_BY_PANEL[byId.get(presetId)?.panel] !== family) {
+      errors.push(`runtimeDefaultPresets.${family} "${presetId}" is not a ${family} agent preset`)
+    }
+  }
+  for (const presetId of candidate?.menuOrder ?? []) {
+    if (!byId.has(presetId)) errors.push(`menuOrder lists unknown preset "${presetId}"`)
+  }
+}
+
 /** Returns a list of human-readable problems; empty when the manifest is valid. */
 export function validateProviderManifest(candidate) {
   const errors = []
@@ -81,6 +113,8 @@ export function validateProviderManifest(candidate) {
   }
   const providerIds = validateProviders(candidate?.providers, errors)
   validatePresets(candidate?.presets, providerIds, errors)
+  validatePresetLinks(candidate?.presets, errors)
+  validateTopLevelRefs(candidate, errors)
   return errors
 }
 
@@ -104,6 +138,7 @@ export const PROVIDER_MANIFEST = deepFreeze(manifest)
 
 const providersById = new Map(manifest.providers.map(provider => [provider.id, provider]))
 const presetsById = new Map(manifest.presets.map(preset => [preset.id, preset]))
+const presetIdByAlias = new Map(manifest.presets.flatMap(preset => (preset.aliases ?? []).map(alias => [alias, preset.id])))
 
 export function listProviders() {
   return manifest.providers
@@ -138,4 +173,74 @@ export function presetsOfProvider(providerId) {
 /** Which SDK runtime owns a preset's session: 'claude' (node sidecar), 'codex' (Rust app-server), or null. */
 export function sdkRuntimeFamilyOfPreset(presetId) {
   return SDK_RUNTIME_FAMILY_BY_PANEL[panelOfPreset(presetId)] ?? null
+}
+
+/** SDK agent sessions (Claude or Codex runtime); they never get a workspace-owned PTY. */
+export function isSdkAgentPreset(presetId) {
+  return sdkRuntimeFamilyOfPreset(presetId) !== null
+}
+
+/**
+ * Sessions whose PTY the workspace starts itself: plain terminals and PTY CLIs.
+ * Unknown or missing presets are treated as plain terminals.
+ */
+export function isPtyPreset(presetId) {
+  return (panelOfPreset(presetId) ?? 'terminal') === 'terminal'
+}
+
+export function isWorktreePreset(presetId) {
+  return presetsById.get(presetId)?.needsGitRepo === true
+}
+
+export function getDefaultPreset() {
+  return presetsById.get(manifest.defaultPreset)
+}
+
+/** The preset used when a session is opened on a runtime without a more specific choice (e.g. a handoff). */
+export function defaultPresetForRuntime(family) {
+  return manifest.runtimeDefaultPresets[family]
+}
+
+/** Maps a retired preset id to its current one; other ids are returned unchanged. */
+export function resolvePresetAlias(presetId) {
+  return presetIdByAlias.get(presetId) ?? presetId
+}
+
+export function apiVersionOfPreset(presetId) {
+  return presetsById.get(presetId)?.apiVersion ?? 'v1'
+}
+
+/** The preset that runs the same agent on the other SDK API version, if any. */
+export function apiVersionSwitchOf(presetId) {
+  return presetsById.get(presetId)?.apiVersionSwitch
+}
+
+/** Command typed into a preset's PTY when agent auto-commands are enabled; null when it has none. */
+export function ptyAutoCommand(presetId, { bypassPermissions = false } = {}) {
+  const preset = presetsById.get(presetId)
+  if (preset?.ptyCommand) {
+    return (bypassPermissions && preset.ptyCommand.bypassPermissions) || preset.ptyCommand.default
+  }
+  return preset?.command || null
+}
+
+export function supportsPtyImagePaste(presetId) {
+  return presetsById.get(presetId)?.ptyImagePaste === true
+}
+
+/** The provider's default model for new sessions of this preset, when it has one. */
+export function defaultModelOfPreset(presetId) {
+  return providersById.get(providerOfPreset(presetId))?.defaultModel
+}
+
+/** "<Provider> Agent", used for generated session titles. */
+export function providerAgentName(presetId) {
+  const label = providersById.get(providerOfPreset(presetId))?.label
+  return label ? `${label} Agent` : presetsById.get(presetId)?.name
+}
+
+/** Position of a preset in the new-session menu; unlisted presets sort after listed ones. */
+export function presetMenuRank(presetId) {
+  const index = manifest.menuOrder.indexOf(presetId)
+  return index === -1 ? manifest.menuOrder.length : index
 }

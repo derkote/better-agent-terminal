@@ -15,6 +15,7 @@ export interface ProviderDefinition {
   usage: UsageKind
   defaultEnabled: boolean
   debugOnly?: boolean
+  defaultModel?: string
 }
 
 export interface PresetDefinition {
@@ -30,10 +31,18 @@ export interface PresetDefinition {
   suggested?: boolean
   backend?: 'sdk' | 'channel' | 'cli' | 'pty'
   needsGitRepo?: boolean
+  aliases?: string[]
+  apiVersion?: 'v1' | 'v2'
+  apiVersionSwitch?: PresetId
+  ptyCommand?: { default: string; bypassPermissions?: string }
+  ptyImagePaste?: boolean
 }
 
 export interface ProviderManifest {
   schemaVersion: number
+  defaultPreset: PresetId
+  runtimeDefaultPresets: Partial<Record<SdkRuntimeFamily, PresetId>>
+  menuOrder: PresetId[]
   providers: ProviderDefinition[]
   presets: PresetDefinition[]
 }
@@ -53,3 +62,16 @@ export function providerOfPreset(presetId: string | null | undefined): ProviderI
 export function panelOfPreset(presetId: string | null | undefined): PanelKind | undefined
 export function presetsOfProvider(providerId: ProviderId): PresetDefinition[]
 export function sdkRuntimeFamilyOfPreset(presetId: string | null | undefined): SdkRuntimeFamily | null
+export function isSdkAgentPreset(presetId: string | null | undefined): boolean
+export function isPtyPreset(presetId: string | null | undefined): boolean
+export function isWorktreePreset(presetId: string | null | undefined): boolean
+export function getDefaultPreset(): PresetDefinition
+export function defaultPresetForRuntime(family: SdkRuntimeFamily): PresetId | undefined
+export function resolvePresetAlias(presetId: string): PresetId
+export function apiVersionOfPreset(presetId: string | null | undefined): 'v1' | 'v2'
+export function apiVersionSwitchOf(presetId: string | null | undefined): PresetId | undefined
+export function ptyAutoCommand(presetId: string | null | undefined, options?: { bypassPermissions?: boolean }): string | null
+export function supportsPtyImagePaste(presetId: string | null | undefined): boolean
+export function defaultModelOfPreset(presetId: string | null | undefined): string | undefined
+export function providerAgentName(presetId: string | null | undefined): string | undefined
+export function presetMenuRank(presetId: string): number

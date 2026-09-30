@@ -15,9 +15,20 @@ const PROVIDER_MANIFEST_JSON: &str = include_str!(concat!(
     "/../shared/providers.json"
 ));
 
-/// Registry-only preset keys. They are stripped from the metadata served to
-/// renderers and remote clients (`agent:list-presets`), which predates them.
-const REGISTRY_ONLY_PRESET_KEYS: &[&str] = &["provider", "panel", "hidden"];
+/// Preset fields served to renderers and remote clients (`agent:list-presets`).
+/// The shape predates the registry, so registry-only keys (provider, panel,
+/// hidden, aliases, …) are never forwarded.
+const PRESET_METADATA_FIELDS: &[&str] = &[
+    "id",
+    "name",
+    "icon",
+    "color",
+    "command",
+    "debug",
+    "suggested",
+    "backend",
+    "needsGitRepo",
+];
 
 // Every field is part of the manifest contract: deserializing it is what
 // rejects a malformed shared/providers.json on first use, even before a call site
@@ -101,10 +112,12 @@ pub fn offered_preset_ids(debug_enabled: bool) -> Vec<&'static str> {
 /// Renderer-facing metadata for a preset (the `agent:list-presets` shape).
 pub fn preset_metadata(id: &str) -> Option<Value> {
     let preset = preset(id)?;
-    let mut object = preset.raw.clone();
-    for key in REGISTRY_ONLY_PRESET_KEYS {
-        object.remove(*key);
-    }
+    let object = preset
+        .raw
+        .iter()
+        .filter(|(key, _)| PRESET_METADATA_FIELDS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect();
     Some(Value::Object(object))
 }
 
@@ -144,11 +157,18 @@ mod tests {
     }
 
     #[test]
-    fn metadata_strips_registry_only_keys() {
-        let metadata = preset_metadata("codex-fugu").unwrap();
-        for key in REGISTRY_ONLY_PRESET_KEYS {
-            assert!(metadata.get(*key).is_none(), "{key} leaked into metadata");
+    fn metadata_only_carries_legacy_fields() {
+        for preset in &manifest().presets {
+            let metadata = preset_metadata(&preset.id).unwrap();
+            for key in metadata.as_object().unwrap().keys() {
+                assert!(
+                    PRESET_METADATA_FIELDS.contains(&key.as_str()),
+                    "{key} leaked into {} metadata",
+                    preset.id
+                );
+            }
         }
+        let metadata = preset_metadata("codex-fugu").unwrap();
         assert_eq!(metadata["name"], "Codex Fugu Agent");
         assert_eq!(preset_metadata("nope"), None);
     }

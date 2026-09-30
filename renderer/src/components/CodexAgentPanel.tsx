@@ -47,6 +47,7 @@ import { CodexTodoChecklist } from './CodexTodoChecklist'
 import { ReasoningSummary } from './ReasoningSummary'
 import { bindPanelActiveEvent, usePanelActivation, usePanelActiveEffect, type PanelActivation } from '../utils/panel-activation'
 import { prepareFilePickerResults, type FilePickerSearchEntry } from '../utils/file-picker-search'
+import { apiVersionOfPreset, defaultModelOfPreset, defaultPresetForRuntime, isWorktreePreset } from '../../../shared/providers.mjs'
 
 function clearRuntimeStatusMeta(meta: SessionMeta | null): SessionMeta | null {
   if (!meta?.runtimeStatus && !meta?.runtimeMessage && !meta?.runtimeStatusStartedAt) return meta
@@ -351,8 +352,8 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
   const { t, i18n } = useTranslation()
   const terminal = workspaceStore.getState().terminals.find(t => t.id === sessionId)
   const isCodexSession = true
-  const isV2Session = terminal?.agentPreset === 'claude-code-v2'
-  const isWorktreeSession = terminal?.agentPreset === 'codex-agent-worktree'
+  const isV2Session = apiVersionOfPreset(terminal?.agentPreset) === 'v2'
+  const isWorktreeSession = isWorktreePreset(terminal?.agentPreset)
   const normalizedAgentParams = normalizeAgentParams(terminal?.agentPreset, terminal?.agentParams)
   const [messages, setMessages] = useState<MessageItem[]>([])
   // Per-tool render-helper cache. Avoids rerunning regex/split over large
@@ -409,9 +410,9 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
   const [currentModel, setCurrentModel] = useState<string>(() => {
     const t = workspaceStore.getState().terminals.find(t => t.id === sessionId)
     if (isCodexSession) {
-      // The Codex Fugu Agent preset defaults to the "fugu" model (provider
-      // sakana); everything else uses the configured default Codex model.
-      const codexFallback = t?.agentPreset === 'codex-fugu' ? 'fugu' : settingsStore.getSettings().defaultCodexModel
+      // Providers with their own default model (Fugu → "fugu", provider
+      // sakana) use it; everything else uses the configured default Codex model.
+      const codexFallback = defaultModelOfPreset(t?.agentPreset) ?? settingsStore.getSettings().defaultCodexModel
       return resolveCodexModel(t?.model, codexFallback)
     }
     return t?.model || settingsStore.getSettings().defaultClaudeModel || ''
@@ -2070,8 +2071,8 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
       const terminalState = workspaceStore.getState().terminals.find(t => t.id === sessionId)
       const savedSdkSessionId = terminalState?.sdkSessionId
       const savedModel = terminalState?.model
-      const apiVersion = terminalState?.agentPreset === 'claude-code-v2' ? 'v2' as const : 'v1' as const
-      const useWorktree = terminalState?.agentPreset === 'codex-agent-worktree' || !!terminalState?.worktreePath
+      const apiVersion = apiVersionOfPreset(terminalState?.agentPreset)
+      const useWorktree = isWorktreePreset(terminalState?.agentPreset) || !!terminalState?.worktreePath
       const globalSettings = settingsStore.getSettings()
       const effectiveModel = isCodexSession
         ? resolveCodexModel(currentModel || savedModel, globalSettings.defaultCodexModel)
@@ -2443,7 +2444,7 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
     // Mark that history will be loaded — prevents sys-init from wiping messages
     historyLoadedRef.current = true
     const apiVersion = isV2Session ? 'v2' as const : 'v1' as const
-    const resumeUsesWorktree = terminal?.agentPreset === 'codex-agent-worktree' || !!terminal?.worktreePath
+    const resumeUsesWorktree = isWorktreePreset(terminal?.agentPreset) || !!terminal?.worktreePath
     const resumeModel = currentModel || settingsStore.getSettings().defaultCodexModel || DEFAULT_CODEX_MODEL
     const resumeEffort = isCodexSession ? effortLevel : (effortLevelForClaudeMode(effortLevel) || 'high')
     await host.claude.resumeSession(
@@ -2494,7 +2495,7 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
       setAttachedImages([])
     }
 
-    const newTerminal = workspaceStore.addTerminal(workspaceId, 'claude-code' as AgentPresetId)
+    const newTerminal = workspaceStore.addTerminal(workspaceId, defaultPresetForRuntime('claude') as AgentPresetId)
     dlog(`${tag} newTerminal=${newTerminal.id.slice(0, 8)}`)
     workspaceStore.setTerminalSdkSessionId(newTerminal.id, result.newSdkSessionId)
     if (currentModel) {

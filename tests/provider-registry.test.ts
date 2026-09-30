@@ -2,7 +2,20 @@ import * as assert from 'assert'
 import { readFileSync } from 'fs'
 import {
   PROVIDER_MANIFEST,
+  apiVersionOfPreset,
+  apiVersionSwitchOf,
+  defaultModelOfPreset,
+  defaultPresetForRuntime,
+  getDefaultPreset,
   getPreset,
+  isPtyPreset,
+  isSdkAgentPreset,
+  isWorktreePreset,
+  presetMenuRank,
+  providerAgentName,
+  ptyAutoCommand,
+  resolvePresetAlias,
+  supportsPtyImagePaste,
   getProvider,
   listProviders,
   panelOfPreset,
@@ -39,6 +52,12 @@ function testValidatorRejectsBrokenManifests() {
     ['unknown usage kind', m => { m.providers[0].usage = 'nope' }, /provider "claude".*unknown usage kind "nope"/],
     ['missing name', m => { delete m.presets[0].name }, /preset "claude-code".*name/],
     ['bad schema version', m => { m.schemaVersion = 99 }, /schemaVersion/],
+    ['unknown default preset', m => { m.defaultPreset = 'nope' }, /defaultPreset "nope"/],
+    ['runtime default on the wrong runtime', m => { m.runtimeDefaultPresets.codex = 'claude-code' }, /runtimeDefaultPresets\.codex "claude-code"/],
+    ['unknown menu entry', m => { m.menuOrder.push('nope') }, /menuOrder.*"nope"/],
+    ['alias shadowing a preset id', m => { m.presets[0].aliases = ['codex-agent'] }, /alias "codex-agent"/],
+    ['unknown api version switch', m => { m.presets[0].apiVersionSwitch = 'nope' }, /preset "claude-code".*apiVersionSwitch "nope"/],
+    ['pty command without default', m => { m.presets[0].ptyCommand = { bypassPermissions: 'x' } }, /preset "claude-code".*ptyCommand/],
   ]
   for (const [label, mutate, expected] of cases) {
     const manifest = clone(PROVIDER_MANIFEST)
@@ -88,6 +107,55 @@ function testLookups() {
   assert.deepEqual(presetsOfProvider('codex').map(p => p.id), ['codex-agent', 'codex-agent-worktree', 'codex-cli'])
 }
 
+function testPresetBehaviourLookups() {
+  assert.equal(getDefaultPreset().id, 'claude-code')
+  assert.equal(defaultPresetForRuntime('claude'), 'claude-code')
+  assert.equal(defaultPresetForRuntime('codex'), 'codex-agent')
+
+  assert.equal(resolvePresetAlias('openai-agent'), 'codex-agent')
+  assert.equal(resolvePresetAlias('claude-code'), 'claude-code')
+  assert.equal(resolvePresetAlias('nope'), 'nope')
+
+  const worktrees = PROVIDER_MANIFEST.presets.filter(p => isWorktreePreset(p.id)).map(p => p.id)
+  assert.deepEqual(worktrees, ['claude-code-worktree', 'claude-cli-worktree', 'codex-agent-worktree'])
+
+  // Sessions owned by an agent SDK runtime (never get a workspace PTY).
+  const sdk = PROVIDER_MANIFEST.presets.filter(p => isSdkAgentPreset(p.id)).map(p => p.id)
+  assert.deepEqual(sdk, ['claude-code', 'claude-code-v2', 'claude-code-worktree', 'codex-agent', 'codex-agent-worktree', 'codex-fugu'])
+  // Sessions whose PTY the workspace starts itself.
+  const pty = PROVIDER_MANIFEST.presets.filter(p => isPtyPreset(p.id)).map(p => p.id)
+  assert.deepEqual(pty, ['codex-cli', 'none'])
+  assert.equal(isPtyPreset(undefined), true)
+  assert.equal(isPtyPreset('unknown-preset'), true)
+
+  assert.equal(apiVersionOfPreset('claude-code'), 'v1')
+  assert.equal(apiVersionOfPreset('claude-code-v2'), 'v2')
+  assert.equal(apiVersionSwitchOf('claude-code'), 'claude-code-v2')
+  assert.equal(apiVersionSwitchOf('claude-code-v2'), 'claude-code')
+  assert.equal(apiVersionSwitchOf('claude-code-worktree'), undefined)
+
+  assert.equal(ptyAutoCommand('codex-cli', { bypassPermissions: false }), 'codex')
+  assert.equal(ptyAutoCommand('codex-cli', { bypassPermissions: true }), 'codex --yolo')
+  assert.equal(ptyAutoCommand('claude-code', { bypassPermissions: true }), 'claude --continue')
+  assert.equal(ptyAutoCommand('none', { bypassPermissions: false }), null)
+
+  assert.deepEqual(
+    PROVIDER_MANIFEST.presets.filter(p => supportsPtyImagePaste(p.id)).map(p => p.id),
+    ['claude-cli-agent', 'claude-cli', 'claude-cli-worktree', 'codex-cli'],
+  )
+
+  assert.equal(defaultModelOfPreset('codex-fugu'), 'fugu')
+  assert.equal(defaultModelOfPreset('codex-agent'), undefined)
+
+  assert.equal(providerAgentName('codex-agent-worktree'), 'Codex Agent')
+  assert.equal(providerAgentName('claude-code-v2'), 'Claude Agent')
+
+  // The new-session menu order that agent-preset-menu.ts used to hard-code.
+  const legacyMenuOrder = ['claude-code', 'claude-channel', 'codex-agent', 'claude-cli', 'codex-cli', 'claude-code-worktree', 'codex-agent-worktree', 'claude-cli-worktree']
+  legacyMenuOrder.forEach((id, index) => assert.equal(presetMenuRank(id), index, `menu rank of ${id}`))
+  assert.equal(presetMenuRank('codex-fugu'), legacyMenuOrder.length)
+}
+
 function testSdkRuntimeFamilyMatchesLegacyMapping() {
   // Mirrors workspace-store.ts sdkSessionRuntimeFamily() before the registry.
   const legacy: Record<string, 'claude' | 'codex' | null> = {
@@ -110,6 +178,7 @@ function main() {
   testAgentPresetsMatchLegacyList()
   testManifestIsImmutable()
   testLookups()
+  testPresetBehaviourLookups()
   testSdkRuntimeFamilyMatchesLegacyMapping()
   console.log('provider-registry tests passed')
 }

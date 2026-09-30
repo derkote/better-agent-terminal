@@ -28,6 +28,7 @@ import {
 } from './utils/remote-profile-events'
 import { rememberMountedWorkspace } from './utils/workspace-mounts'
 import type { AppState, EnvVariable, TerminalInstance } from './types'
+import { panelOfPreset } from '../../shared/providers.mjs'
 
 // Panel settings interface
 interface PanelSettings {
@@ -1359,7 +1360,7 @@ export default function App() {
       {/* Right sidebar: tabbed Snippets / Skills (Skills only for Claude Code terminals) */}
       {(() => {
         const focusedTerminal = state.focusedTerminalId ? state.terminals.find(t2 => t2.id === state.focusedTerminalId) : null
-        const isClaudeCode = focusedTerminal?.agentPreset === 'claude-code' || focusedTerminal?.agentPreset === 'claude-code-v2'
+        const isClaudeCode = panelOfPreset(focusedTerminal?.agentPreset) === 'claude-agent'
         const effectiveTab = isClaudeCode ? rightPanelTab : 'snippets'
 
         if (!showSnippetSidebar) return null

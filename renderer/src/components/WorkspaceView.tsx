@@ -21,6 +21,7 @@ import {
 } from '../utils/remote-auth'
 import { touchBoundedLru } from '../utils/bounded-lru'
 import { shouldKeepTerminalPanelMounted } from '../utils/workspace-mounts'
+import { apiVersionOfPreset, apiVersionSwitchOf, getDefaultPreset, isPtyPreset, isSdkAgentPreset, isWorktreePreset, panelOfPreset, providerAgentName, ptyAutoCommand, sdkRuntimeFamilyOfPreset } from '../../../shared/providers.mjs'
 
 // Lazy load heavy components (xterm.js, Claude SDK, etc.)
 const MainPanel = lazy(() => import('./MainPanel').then(m => ({ default: m.MainPanel })))
@@ -158,13 +159,7 @@ function mergeEnvVars(global: EnvVariable[] = [], workspace: EnvVariable[] = [])
 }
 
 function buildAgentAutoCommand(presetId: string, settings: ReturnType<typeof settingsStore.getSettings>): string | null {
-  if (presetId === 'codex-cli') {
-    return settings.allowBypassPermissions
-      ? 'codex --yolo'
-      : 'codex'
-  }
-  const preset = getAgentPreset(presetId)
-  return preset?.command || null
+  return ptyAutoCommand(presetId, { bypassPermissions: !!settings.allowBypassPermissions })
 }
 
 function errorMessage(error: unknown): string {
@@ -803,9 +798,9 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
         for (const terminal of terminals) {
           // Worker terminals manage their own PTYs internally via WorkerPanel
           if (terminal.procfilePath) continue
-          if (terminal.agentPreset === 'claude-code' || terminal.agentPreset === 'claude-channel' || terminal.agentPreset === 'claude-cli-agent' || terminal.agentPreset === 'claude-code-v2' || terminal.agentPreset === 'claude-code-worktree' || terminal.agentPreset === 'codex-agent' || terminal.agentPreset === 'codex-agent-worktree') continue
-          // Claude CLI presets are started by ClaudeCliPanel so it can own session restore.
-          if (terminal.agentPreset === 'claude-cli' || terminal.agentPreset === 'claude-cli-worktree') continue
+          // Agent panels start their own sessions; Claude CLI presets are started
+          // by ClaudeCliPanel so it can own session restore.
+          if (!isPtyPreset(terminal.agentPreset)) continue
           const created = await createWorkspacePty({
             id: terminal.id,
             cwd: terminal.cwd || workspace.folderPath,
@@ -831,7 +826,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
         const terminalCount = settings.defaultTerminalCount || 1
         const createAgentTerminal = settings.createDefaultAgentTerminal === true
         const defaultAgent = createAgentTerminal
-          ? (workspace.defaultAgent || settings.defaultAgent || 'claude-code')
+          ? (workspace.defaultAgent || settings.defaultAgent || getDefaultPreset().id)
           : 'none'
 
         if (createAgentTerminal) {
@@ -839,7 +834,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
           // the terminal already pointing at it, so the SDK session starts
           // through the normal path with cwd = worktree folder.
           let agentTerminal: TerminalInstance
-          if (defaultAgent === 'claude-code-worktree' || defaultAgent === 'codex-agent-worktree') {
+          if (isSdkAgentPreset(defaultAgent) && isWorktreePreset(defaultAgent)) {
             const id = uuidv4()
             const wtResult = await host.worktree.create(id, workspace.folderPath, settings.worktreePnpmInstallEnabled === true)
             if (wtResult.success && wtResult.worktreePath) {
@@ -849,7 +844,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
                 worktreePath: wtResult.worktreePath,
                 worktreeBranch: wtResult.branchName,
               })
-              workspaceStore.setTerminalGeneratedTitle(agentTerminal.id, defaultAgent === 'codex-agent-worktree' ? 'Codex Agent (worktree)' : 'Claude Agent (worktree)')
+              workspaceStore.setTerminalGeneratedTitle(agentTerminal.id, `${providerAgentName(defaultAgent)} (worktree)`)
             } else {
               // Worktree creation failed — fall back to a normal agent terminal.
               agentTerminal = workspaceStore.addTerminal(workspace.id, defaultAgent as AgentPresetId, { id })
@@ -857,7 +852,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
           } else {
             agentTerminal = workspaceStore.addTerminal(workspace.id, defaultAgent as AgentPresetId)
           }
-          if (defaultAgent !== 'claude-cli' && defaultAgent !== 'claude-cli-worktree' && defaultAgent !== 'claude-cli-agent' && defaultAgent !== 'claude-code' && defaultAgent !== 'claude-channel' && defaultAgent !== 'claude-code-v2' && defaultAgent !== 'claude-code-worktree' && defaultAgent !== 'codex-agent' && defaultAgent !== 'codex-agent-worktree') {
+          if (isPtyPreset(defaultAgent)) {
             const created = await createWorkspacePty({
               id: agentTerminal.id,
               cwd: workspace.folderPath,
@@ -971,7 +966,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
     if (!preset) return
 
     if (preset.backend === 'sdk' || preset.backend === 'channel') {
-      if (presetId === 'claude-code-worktree' || presetId === 'codex-agent-worktree') {
+      if (isWorktreePreset(presetId)) {
         // Build the worktree folder first, then add the terminal already
         // pointing at it — the SDK session starts normally in the worktree.
         const settings = settingsStore.getSettings()
@@ -988,7 +983,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
           worktreePath: wtResult.worktreePath,
           worktreeBranch: wtResult.branchName,
         })
-        workspaceStore.setTerminalGeneratedTitle(terminal.id, presetId === 'codex-agent-worktree' ? 'Codex Agent (worktree)' : 'Claude Agent (worktree)')
+        workspaceStore.setTerminalGeneratedTitle(terminal.id, `${providerAgentName(presetId)} (worktree)`)
         workspaceStore.setFocusedTerminal(terminal.id)
         workspaceStore.save()
       } else {
@@ -1103,12 +1098,15 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
   const handleConfirmClose = useCallback((cleanWorktree = false) => {
     if (showCloseConfirm) {
       const terminal = terminals.find(t => t.id === showCloseConfirm)
-      if (terminal?.agentPreset === 'claude-code' || terminal?.agentPreset === 'claude-code-v2' || terminal?.agentPreset === 'claude-code-worktree' || terminal?.agentPreset === 'codex-agent' || terminal?.agentPreset === 'codex-agent-worktree') {
+      if (isSdkAgentPreset(terminal?.agentPreset)) {
         host.claude.stopSession(showCloseConfirm)
-        if (cleanWorktree && terminal?.agentPreset === 'claude-code-worktree') {
-          host.claude.cleanupWorktree(showCloseConfirm, true)
-        } else if (cleanWorktree && terminal?.agentPreset === 'codex-agent-worktree') {
-          host.worktree.remove(showCloseConfirm, true)
+        if (cleanWorktree && isWorktreePreset(terminal?.agentPreset)) {
+          // The Claude runtime owns its worktree; Codex worktrees are plain git worktrees.
+          if (sdkRuntimeFamilyOfPreset(terminal?.agentPreset) === 'claude') {
+            host.claude.cleanupWorktree(showCloseConfirm, true)
+          } else {
+            host.worktree.remove(showCloseConfirm, true)
+          }
         }
       } else {
         host.pty.kill(showCloseConfirm)
@@ -1128,15 +1126,15 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
     if (!terminal) return
     workspaceStore.setTerminalRuntimeError(id, undefined)
     try {
-      if (terminal.agentPreset === 'claude-code' || terminal.agentPreset === 'claude-code-v2' || terminal.agentPreset === 'claude-code-worktree' || terminal.agentPreset === 'codex-agent' || terminal.agentPreset === 'codex-agent-worktree') {
-        // Stop and restart Claude session
+      if (isSdkAgentPreset(terminal.agentPreset)) {
+        // Stop and restart the agent session
         await host.claude.stopSession(id)
         await host.claude.startSession(id, {
           cwd: terminal.cwd,
           agentPreset: terminal.agentPreset,
-          ...(terminal.agentPreset === 'claude-code-worktree' || terminal.agentPreset === 'codex-agent-worktree' ? { useWorktree: true, worktreePath: terminal.worktreePath, worktreeBranch: terminal.worktreeBranch } : {}),
+          ...(isWorktreePreset(terminal.agentPreset) ? { useWorktree: true, worktreePath: terminal.worktreePath, worktreeBranch: terminal.worktreeBranch } : {}),
         })
-      } else if (terminal.agentPreset === 'claude-cli' || terminal.agentPreset === 'claude-cli-worktree' || terminal.agentPreset === 'claude-cli-agent') {
+      } else if (panelOfPreset(terminal.agentPreset) === 'claude-cli' || panelOfPreset(terminal.agentPreset) === 'claude-cli-agent') {
         await host.pty.kill(id)
         workspaceStore.bumpTerminalClaudeCliRestart(id)
       } else {
@@ -1170,13 +1168,13 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
 
   const handleSwitchApiVersion = useCallback(async (id: string) => {
     const terminal = terminals.find(t => t.id === id)
-    if (!terminal || (terminal.agentPreset !== 'claude-code' && terminal.agentPreset !== 'claude-code-v2')) return
+    if (!terminal || !apiVersionSwitchOf(terminal.agentPreset)) return
     // Stop current session
     await host.claude.stopSession(id)
     // Switch agentPreset in store
     const newPreset = workspaceStore.switchTerminalApiVersion(id)
     if (!newPreset) return
-    const newApiVersion = newPreset === 'claude-code-v2' ? 'v2' as const : 'v1' as const
+    const newApiVersion = apiVersionOfPreset(newPreset)
     // Resume with the same sdkSessionId but new API version
     const sdkSessionId = terminal.sdkSessionId
     if (sdkSessionId) {
@@ -1238,7 +1236,7 @@ export const WorkspaceView = memo(function WorkspaceView({ workspace, terminals,
   // Send content to the active Claude agent session
   const handleSendToClaude = useCallback(async (content: string) => {
     if (!agentTerminal) return false
-    if (agentTerminal.agentPreset === 'claude-channel') {
+    if (panelOfPreset(agentTerminal.agentPreset) === 'claude-channel') {
       await host.claudeChannel.sendMessage(agentTerminal.id, content)
     } else {
       await host.claude.sendMessage(agentTerminal.id, content)
