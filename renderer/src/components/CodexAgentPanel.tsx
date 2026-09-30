@@ -47,7 +47,7 @@ import { CodexTodoChecklist } from './CodexTodoChecklist'
 import { ReasoningSummary } from './ReasoningSummary'
 import { bindPanelActiveEvent, usePanelActivation, usePanelActiveEffect, type PanelActivation } from '../utils/panel-activation'
 import { prepareFilePickerResults, type FilePickerSearchEntry } from '../utils/file-picker-search'
-import { apiVersionOfPreset, defaultModelOfPreset, defaultPresetForRuntime, isWorktreePreset } from '../../../shared/providers.mjs'
+import { apiVersionOfPreset, defaultModelOfPreset, defaultPresetForRuntime, isWorktreePreset, providerOfPreset } from '../../../shared/providers.mjs'
 
 function clearRuntimeStatusMeta(meta: SessionMeta | null): SessionMeta | null {
   if (!meta?.runtimeStatus && !meta?.runtimeMessage && !meta?.runtimeStatusStartedAt) return meta
@@ -2495,7 +2495,7 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
       setAttachedImages([])
     }
 
-    const newTerminal = workspaceStore.addTerminal(workspaceId, defaultPresetForRuntime('claude') as AgentPresetId)
+    const newTerminal = workspaceStore.addTerminal(workspaceId, defaultPresetForRuntime('claude'))
     dlog(`${tag} newTerminal=${newTerminal.id.slice(0, 8)}`)
     workspaceStore.setTerminalSdkSessionId(newTerminal.id, result.newSdkSessionId)
     if (currentModel) {
@@ -2773,7 +2773,7 @@ const CodexAgentPanelContent = memo(function CodexAgentPanelContent({ sessionId,
           id: `sys-login-${Date.now()}`, sessionId, role: 'system' as const,
           content: 'Opening Codex login...', timestamp: Date.now(),
         }])
-        onRequestLogin('codex')
+        onRequestLogin(providerOfPreset(terminal?.agentPreset) ?? providerOfPreset(defaultPresetForRuntime('codex'))!)
       } else {
         setMessages(prev => [...prev, {
           id: `sys-login-err-${Date.now()}`, sessionId, role: 'system' as const,

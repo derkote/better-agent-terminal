@@ -19,6 +19,7 @@
     {
       "id": "claude",
       "label": "Claude",
+      "runtime": "claude",
       "auth": "claude-oauth",
       "usage": "anthropic-oauth",
       "defaultEnabled": true
@@ -26,6 +27,7 @@
     {
       "id": "codex",
       "label": "Codex",
+      "runtime": "codex",
       "auth": "codex-oauth",
       "usage": "codex-rate-limits",
       "defaultEnabled": true
@@ -33,7 +35,9 @@
     {
       "id": "fugu",
       "label": "Fugu (Sakana)",
+      "runtime": "codex",
       "auth": "api-key",
+      "apiKeyStore": "codex-env",
       "usage": "none",
       "defaultEnabled": true,
       "debugOnly": true,

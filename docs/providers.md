@@ -35,7 +35,9 @@ that still do are being moved over; see [`plans/provider-registry.md`](../plans/
 |---|---|---|
 | `id` | string | Stable id. It is used in settings, IPC payloads (`agentKind`, `agent:usage` `provider`, `claude:account-changed` `agent`) and persisted data, so **never rename it**. |
 | `label` | string | Display name |
-| `auth` | `claude-oauth` \| `codex-oauth` \| `api-key` | Which account/login adapter handles it |
+| `runtime` | `claude` \| `codex` | Agent CLI runtime its sessions run on; the account chip shows that runtime's version |
+| `auth` | `claude-oauth` \| `codex-oauth` \| `api-key` | Which account adapter handles it (`renderer/src/providers/accounts.ts`) |
+| `apiKeyStore` | `codex-env`? | Required for `api-key` providers: where the key lives (`codex-env` = `$CODEX_HOME/.env`) |
 | `usage` | `anthropic-oauth` \| `codex-rate-limits` \| `none` | Which usage/rate-limit adapter polls it |
 | `defaultEnabled` | boolean | Initial state of the provider toggle |
 | `debugOnly` | boolean? | Only surfaced when `BAT_DEBUG` is set |
@@ -65,8 +67,24 @@ Only the presentation fields (`id`, `name`, `icon`, `color`, `command`, `debug`,
 `backend`, `needsGitRepo`) are served on `agent:list-presets`, whose shape predates the registry.
 Every other key is registry-only.
 
-Kinds (`auth`, `usage`, `panel`) are code. The allowed values are listed in `shared/providers.mjs`
-(`AUTH_KINDS`, `USAGE_KINDS`, `PANEL_KINDS`) and mirrored in `providers.d.mts`. Providers and
+### Account adapters
+
+The workspace account chip follows the focused session's provider (`accountChipProviderOf` in
+`renderer/src/providers/account-routing.ts`: app-managed agent sessions get a chip, raw CLIs in a PTY
+and plain terminals don't). Everything provider-specific goes through the adapter for the provider's
+`auth` kind:
+
+| `auth` | Accounts | Local sign-in | Remote sign-in ceremony |
+|---|---|---|---|
+| `claude-oauth` | Claude account list, switch | `LoginDialog` (paste-back code) | `paste-code-v1` |
+| `codex-oauth` | Codex account list, switch | inline browser OAuth, cancellable | `device-code-v1` |
+| `api-key` | none; the chip shows whether a key is configured | none; configured in Settings | none |
+
+After a switch or sign-in the renderer fires `<provider id>-account-switched` on `window`, which is
+the same name the existing `claude-account-switched` / `codex-account-switched` events already use.
+
+Kinds (`auth`, `usage`, `panel`, `runtime`, `apiKeyStore`) are code. The allowed values are listed in `shared/providers.mjs`
+(`AUTH_KINDS`, `USAGE_KINDS`, `PANEL_KINDS`, `RUNTIME_KINDS`, `API_KEY_STORES`) and mirrored in `providers.d.mts`. Providers and
 presets are data.
 
 ## Adding a provider

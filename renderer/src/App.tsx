@@ -29,6 +29,7 @@ import {
 import { rememberMountedWorkspace } from './utils/workspace-mounts'
 import type { AppState, EnvVariable, TerminalInstance } from './types'
 import { panelOfPreset } from '../../shared/providers.mjs'
+import { accountEventProvider, accountSwitchedEvent } from './providers/account-routing'
 
 // Panel settings interface
 interface PanelSettings {
@@ -893,8 +894,7 @@ export default function App() {
     // account chip and the agent panels already listen on, so one subscription
     // here keeps every view in this window in sync with host-owned state.
     const unsubAccountChanged = host.claude.onAccountChanged(payload => {
-      const kind = payload?.agent === 'codex' ? 'codex' : 'claude'
-      window.dispatchEvent(new CustomEvent(`${kind}-account-switched`, {
+      window.dispatchEvent(new CustomEvent(accountSwitchedEvent(accountEventProvider(payload?.agent)), {
         detail: { accountId: payload?.accountId ?? undefined },
       }))
     })

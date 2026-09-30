@@ -5,13 +5,16 @@ export type ProviderId = string
 export type PresetId = string
 export type AuthKind = 'claude-oauth' | 'codex-oauth' | 'api-key'
 export type UsageKind = 'anthropic-oauth' | 'codex-rate-limits' | 'none'
+export type ApiKeyStore = 'codex-env'
 export type PanelKind = 'claude-agent' | 'codex-agent' | 'claude-channel' | 'claude-cli-agent' | 'claude-cli' | 'terminal'
 export type SdkRuntimeFamily = 'claude' | 'codex'
 
 export interface ProviderDefinition {
   id: ProviderId
   label: string
+  runtime: SdkRuntimeFamily
   auth: AuthKind
+  apiKeyStore?: ApiKeyStore
   usage: UsageKind
   defaultEnabled: boolean
   debugOnly?: boolean
@@ -41,7 +44,7 @@ export interface PresetDefinition {
 export interface ProviderManifest {
   schemaVersion: number
   defaultPreset: PresetId
-  runtimeDefaultPresets: Partial<Record<SdkRuntimeFamily, PresetId>>
+  runtimeDefaultPresets: Record<SdkRuntimeFamily, PresetId>
   menuOrder: PresetId[]
   providers: ProviderDefinition[]
   presets: PresetDefinition[]
@@ -50,6 +53,8 @@ export interface ProviderManifest {
 export const PROVIDER_MANIFEST_SCHEMA_VERSION: number
 export const AUTH_KINDS: readonly AuthKind[]
 export const USAGE_KINDS: readonly UsageKind[]
+export const API_KEY_STORES: readonly ApiKeyStore[]
+export const RUNTIME_KINDS: readonly SdkRuntimeFamily[]
 export const PANEL_KINDS: readonly PanelKind[]
 export const PROVIDER_MANIFEST: ProviderManifest
 
@@ -66,7 +71,7 @@ export function isSdkAgentPreset(presetId: string | null | undefined): boolean
 export function isPtyPreset(presetId: string | null | undefined): boolean
 export function isWorktreePreset(presetId: string | null | undefined): boolean
 export function getDefaultPreset(): PresetDefinition
-export function defaultPresetForRuntime(family: SdkRuntimeFamily): PresetId | undefined
+export function defaultPresetForRuntime(family: SdkRuntimeFamily): PresetId
 export function resolvePresetAlias(presetId: string): PresetId
 export function apiVersionOfPreset(presetId: string | null | undefined): 'v1' | 'v2'
 export function apiVersionSwitchOf(presetId: string | null | undefined): PresetId | undefined

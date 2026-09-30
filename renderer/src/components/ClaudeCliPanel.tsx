@@ -72,7 +72,8 @@ function buildClaudeLaunch(
   return { command: cliPath, args }
 }
 
-function isClaudeCliPreset(value: TerminalInstance['agentPreset']): value is AgentPresetId {
+// Runtime check only: preset ids are plain strings (see shared/providers.json).
+function isClaudeCliPreset(value: TerminalInstance['agentPreset']): boolean {
   return panelOfPreset(value) === 'claude-cli'
 }
 

@@ -1784,7 +1784,7 @@ Reference: https://github.com/ind-igo/cx`
             panel's stopPropagation handler instead of closing Settings too. */}
         {accountLoginOpen && (
           <LoginDialog
-            kind="claude"
+            provider="claude"
             target={isRemoteProfile ? 'remote' : 'local'}
             hostLabel={remoteOrigin || undefined}
             onClose={() => setAccountLoginOpen(false)}

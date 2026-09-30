@@ -39,6 +39,7 @@ const PRESET_METADATA_FIELDS: &[&str] = &[
 pub struct ProviderDefinition {
     pub id: String,
     pub label: String,
+    pub runtime: String,
     pub auth: String,
     pub usage: String,
     pub default_enabled: bool,
@@ -96,6 +97,17 @@ pub fn manifest() -> &'static ProviderManifest {
 
 pub fn preset(id: &str) -> Option<&'static PresetDefinition> {
     manifest().presets.iter().find(|preset| preset.id == id)
+}
+
+/// The SDK runtime that owns a preset's session: "claude" (node sidecar) or
+/// "codex" (Rust app-server). None for PTY, CLI and channel presets and for
+/// unknown ids. Mirrors `sdkRuntimeFamilyOfPreset` in shared/providers.mjs.
+pub fn sdk_runtime_family(preset_id: &str) -> Option<&'static str> {
+    match preset(preset_id)?.panel.as_str() {
+        "claude-agent" => Some("claude"),
+        "codex-agent" => Some("codex"),
+        _ => None,
+    }
 }
 
 /// Preset ids offered to users, in manifest order. Hidden presets are never
@@ -171,6 +183,15 @@ mod tests {
         let metadata = preset_metadata("codex-fugu").unwrap();
         assert_eq!(metadata["name"], "Codex Fugu Agent");
         assert_eq!(preset_metadata("nope"), None);
+    }
+
+    #[test]
+    fn sdk_runtime_family_by_panel() {
+        assert_eq!(sdk_runtime_family("claude-code-worktree"), Some("claude"));
+        assert_eq!(sdk_runtime_family("codex-fugu"), Some("codex"));
+        assert_eq!(sdk_runtime_family("claude-channel"), None);
+        assert_eq!(sdk_runtime_family("codex-cli"), None);
+        assert_eq!(sdk_runtime_family("nope"), None);
     }
 
     #[test]

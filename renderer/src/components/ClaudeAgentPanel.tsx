@@ -47,7 +47,7 @@ import { buildAgentTaskTree, findAgentNode, formatAgentNodeElapsed, summarizeAge
 import { bindPanelActiveEvent, usePanelActivation, usePanelActiveEffect, type PanelActivation } from '../utils/panel-activation'
 import { prepareFilePickerResults, type FilePickerSearchEntry } from '../utils/file-picker-search'
 import { buildTranscriptHandoffPrompt, codexPermissionsForClaudeHandoff, type TranscriptSnapshot } from '../utils/agent-context-transfer'
-import { apiVersionOfPreset, defaultPresetForRuntime, isWorktreePreset, sdkRuntimeFamilyOfPreset } from '../../../shared/providers.mjs'
+import { apiVersionOfPreset, defaultPresetForRuntime, isWorktreePreset, providerOfPreset, sdkRuntimeFamilyOfPreset, type ProviderId, type SdkRuntimeFamily } from '../../../shared/providers.mjs'
 
 interface SessionMeta {
   model?: string
@@ -213,8 +213,8 @@ export interface ClaudeAgentPanelProps {
   showToolMsg?: boolean
   showThinkingMsg?: boolean
   isRemoteConnected?: boolean
-  targetAgent?: 'claude' | 'codex'
-  onRequestLogin?: (kind: 'claude' | 'codex') => void
+  targetAgent?: SdkRuntimeFamily
+  onRequestLogin?: (kind: ProviderId) => void
 }
 
 interface AttachedImage {
@@ -2934,7 +2934,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
       setAttachedImages([])
     }
 
-    const newTerminal = workspaceStore.addTerminal(workspaceId, defaultPresetForRuntime('claude') as AgentPresetId)
+    const newTerminal = workspaceStore.addTerminal(workspaceId, defaultPresetForRuntime('claude'))
     dlog(`${tag} newTerminal=${newTerminal.id.slice(0, 8)}`)
     workspaceStore.setTerminalSdkSessionId(newTerminal.id, result.newSdkSessionId)
     if (currentModel) {
@@ -2978,7 +2978,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
       const model = settings.defaultCodexModel || undefined
       const effort = settings.defaultCodexEffort || 'high'
       const handoffPermissions = codexPermissionsForClaudeHandoff(permissionMode)
-      const codexPreset = defaultPresetForRuntime('codex') as AgentPresetId
+      const codexPreset = defaultPresetForRuntime('codex')
       const target = workspaceStore.addTerminal(workspaceId, codexPreset, {
         id: uuidv4(),
         cwd: snapshot.cwd,
@@ -3230,7 +3230,7 @@ const ClaudeAgentPanelContent = memo(function ClaudeAgentPanelContent({ sessionI
           id: `sys-login-${Date.now()}`, sessionId, role: 'system' as const,
           content: 'Opening Claude login...', timestamp: Date.now(),
         }])
-        onRequestLogin('claude')
+        onRequestLogin(providerOfPreset(terminal?.agentPreset) ?? providerOfPreset(defaultPresetForRuntime('claude'))!)
       } else {
         setMessages(prev => [...prev, {
           id: `sys-login-err-${Date.now()}`, sessionId, role: 'system' as const,

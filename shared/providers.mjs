@@ -11,6 +11,10 @@ import manifest from './providers.json' with { type: 'json' }
 export const PROVIDER_MANIFEST_SCHEMA_VERSION = 1
 export const AUTH_KINDS = Object.freeze(['claude-oauth', 'codex-oauth', 'api-key'])
 export const USAGE_KINDS = Object.freeze(['anthropic-oauth', 'codex-rate-limits', 'none'])
+// Where an `api-key` provider's key lives. codex-env = $CODEX_HOME/.env (Fugu).
+export const API_KEY_STORES = Object.freeze(['codex-env'])
+// The agent CLI runtime a provider's sessions run on (and whose version its account chip shows).
+export const RUNTIME_KINDS = Object.freeze(['claude', 'codex'])
 export const PANEL_KINDS = Object.freeze([
   'claude-agent',
   'codex-agent',
@@ -42,7 +46,11 @@ function validateProviders(providers, errors) {
     if (ids.has(id)) errors.push(`duplicate provider id "${id}"`)
     ids.add(id)
     if (!isNonEmptyString(provider.label)) errors.push(`provider "${id}" is missing a label`)
+    if (!RUNTIME_KINDS.includes(provider.runtime)) errors.push(`provider "${id}" has unknown runtime "${provider.runtime}"`)
     if (!AUTH_KINDS.includes(provider.auth)) errors.push(`provider "${id}" has unknown auth kind "${provider.auth}"`)
+    if (provider.auth === 'api-key' && !API_KEY_STORES.includes(provider.apiKeyStore)) {
+      errors.push(`provider "${id}" has unknown apiKeyStore "${provider.apiKeyStore}"`)
+    }
     if (!USAGE_KINDS.includes(provider.usage)) errors.push(`provider "${id}" has unknown usage kind "${provider.usage}"`)
     if (typeof provider.defaultEnabled !== 'boolean') errors.push(`provider "${id}" needs a boolean defaultEnabled`)
   }
@@ -85,8 +93,11 @@ function validatePresetLinks(presets, errors) {
     if (preset?.apiVersionSwitch !== undefined && !ids.has(preset.apiVersionSwitch)) {
       errors.push(`preset "${preset.id}" has unknown apiVersionSwitch "${preset.apiVersionSwitch}"`)
     }
-    if (preset?.ptyCommand !== undefined && !isNonEmptyString(preset.ptyCommand?.default)) {
-      errors.push(`preset "${preset.id}" ptyCommand needs a default command`)
+    if (preset?.ptyCommand !== undefined) {
+      if (!isNonEmptyString(preset.ptyCommand?.default)) errors.push(`preset "${preset.id}" ptyCommand needs a default command`)
+      if (preset.ptyCommand?.bypassPermissions !== undefined && !isNonEmptyString(preset.ptyCommand.bypassPermissions)) {
+        errors.push(`preset "${preset.id}" ptyCommand.bypassPermissions must be a non-empty command`)
+      }
     }
   }
 }
@@ -95,7 +106,9 @@ function validateTopLevelRefs(candidate, errors) {
   const presets = Array.isArray(candidate?.presets) ? candidate.presets : []
   const byId = new Map(presets.map(preset => [preset?.id, preset]))
   if (!byId.has(candidate?.defaultPreset)) errors.push(`defaultPreset "${candidate?.defaultPreset}" is not a declared preset`)
-  for (const [family, presetId] of Object.entries(candidate?.runtimeDefaultPresets ?? {})) {
+  // Every runtime needs a default preset: handoffs open sessions by runtime.
+  for (const family of RUNTIME_KINDS) {
+    const presetId = candidate?.runtimeDefaultPresets?.[family]
     if (SDK_RUNTIME_FAMILY_BY_PANEL[byId.get(presetId)?.panel] !== family) {
       errors.push(`runtimeDefaultPresets.${family} "${presetId}" is not a ${family} agent preset`)
     }

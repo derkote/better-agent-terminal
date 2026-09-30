@@ -1,6 +1,6 @@
 # Provider registry
 
-Status: Phase 0 and Phase 1.1 implemented (2026-09-30); Phase 1.2–1.4 and Phase 2 pending.
+Status: Phase 0 and Phase 1.1–1.2 implemented (2026-09-30); Phase 1.3–1.4 and Phase 2 pending.
 
 ## Goal
 
@@ -203,10 +203,22 @@ Split into reviewable commits by area:
      It now takes the Codex agent path everywhere.
    - **Claude Agent (Worktree)** now shows the right-sidebar Skills tab like the other Claude
      agent presets. Previously only `claude-code` and `claude-code-v2` were listed.
-2. **Accounts and login:** `WorkspaceView` `refreshAccountChip` / `handleAccountSwitch` /
+2. **Accounts and login (done):** `WorkspaceView` `refreshAccountChip` / `handleAccountSwitch` /
    `handleLogin` / `handleLoginCancel` become one adapter map. `LoginDialog`, `remote-auth`,
    `App.tsx` `onAccountChanged`, `notification-store`, `notification.rs`
    `agent_kind_from_options`.
+
+   Chip loading, switching and sign-in live in `renderer/src/providers/accounts.ts`, one
+   adapter per `auth` kind, and the routing helpers are in `account-routing.ts`. `remote-auth`
+   derives the remote ceremony from the auth kind. `LoginDialog` takes a provider id. Unions
+   that meant the *runtime* rather than the provider (`agentKind`, `targetAgent`) became
+   `SdkRuntimeFamily`. New manifest fields: provider `runtime` and `apiKeyStore`.
+
+   Intended behaviour changes:
+   - **Fugu** gets an account chip. It shows whether its API key is configured and
+     points to Settings, because an API-key provider has no sign-in flow.
+   - **Fugu** completion notifications are tagged `codex`. `agent_kind_from_options` had
+     no entry for it before.
 3. **Usage:** `claude-usage-cache` (`UsageProvider` becomes `ProviderId`, and `ingest` no
    longer falls back to Claude), the `claude_usage.rs` poller loop, and the statusline
    usage source in both panels.

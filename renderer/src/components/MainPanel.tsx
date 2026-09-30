@@ -8,6 +8,7 @@ import { getAgentPreset } from '../types/agent-presets'
 import { workspaceStore } from '../stores/workspace-store'
 import { WorktreeMergedChip } from './WorktreeMergedChip'
 import { isSdkAgentPreset, panelOfPreset } from '../../../shared/providers.mjs'
+import { type ProviderId } from '../../../shared/providers.mjs'
 
 // Lazy load heavy components
 const ClaudeAgentPanel = lazy(() => import('./ClaudeAgentPanel').then(m => ({ default: m.ClaudeAgentPanel })))
@@ -25,7 +26,7 @@ interface MainPanelProps {
   onSwitchApiVersion?: (id: string) => void
   workspaceId?: string
   isRemoteConnected?: boolean
-  onRequestLogin?: (kind: 'claude' | 'codex') => void
+  onRequestLogin?: (kind: ProviderId) => void
 }
 
 export const MainPanel = memo(function MainPanel({ terminal, isActive, onClose, onRestart, onSwitchApiVersion, workspaceId, isRemoteConnected = false, onRequestLogin }: Readonly<MainPanelProps>) {
