@@ -33,6 +33,7 @@ mod remote_client;
 mod profile_context;
 pub mod remote_core;
 mod remote_server;
+mod session_replay;
 mod runtime_catalog;
 // Tauri-free managed-runtime install core, shared by the desktop installer
 // (commands/runtime.rs delegates the codex download/extract/place to it) and

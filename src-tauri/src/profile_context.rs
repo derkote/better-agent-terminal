@@ -24,6 +24,7 @@ pub type ContextSink = Arc<dyn Fn(Value) + Send + Sync>;
 #[derive(Default)]
 struct Interests {
     sessions: HashSet<String>,
+    sync_sessions: HashSet<String>,
     ptys: HashSet<String>,
 }
 
@@ -133,7 +134,7 @@ fn scoped_event(
             params
                 .get("sessionId")
                 .and_then(Value::as_str)
-                .is_some_and(|id| interests.sessions.contains(id))
+                .is_some_and(|id| if channel == "claude:sync-event" { interests.sync_sessions.contains(id) } else { interests.sessions.contains(id) })
         } else {
             params
                 .get("id")
@@ -338,6 +339,10 @@ impl ProfileContext {
             .map_err(|_| "Profile subscription unavailable")?;
         if let Some(id) = params.get("sessionId").and_then(Value::as_str) {
             interests.sessions.insert(id.into());
+            if channel == "claude:sync-session" {
+                if !interests.sync_sessions.contains(id) && interests.sync_sessions.len() >= 512 { return Err("Too many sync subscriptions".into()); }
+                interests.sync_sessions.insert(id.into());
+            }
         }
         if channel.starts_with("pty:") {
             if let Some(id) = params
@@ -406,6 +411,7 @@ impl ProfileContext {
 
 #[derive(Default)]
 pub struct ProfileContexts {
+    root_sync_sessions: Mutex<HashSet<String>>,
     contexts: Mutex<HashMap<String, Arc<ProfileContext>>>,
     closed: AtomicBool,
 }
@@ -417,6 +423,19 @@ impl std::fmt::Debug for ProfileContexts {
 }
 
 impl ProfileContexts {
+    pub fn subscribe_root_sync(&self, session_id: &str) -> Result<(), String> {
+        let mut sessions = self.root_sync_sessions.lock().map_err(|_| "Sync subscriptions unavailable")?;
+        if !sessions.contains(session_id) && sessions.len() >= 512 { return Err("Too many sync subscriptions".into()); }
+        sessions.insert(session_id.into());
+        Ok(())
+    }
+
+    pub fn accepts_root_sync(&self, params: &Value) -> bool {
+        params.get("sessionId").and_then(Value::as_str).is_some_and(|id| {
+            self.root_sync_sessions.lock().map(|sessions| sessions.contains(id)).unwrap_or(false)
+        })
+    }
+
     pub fn has_contexts(&self) -> bool {
         self.contexts
             .lock()
@@ -629,6 +648,22 @@ mod tests {
             json!({"sessionId":"session-a"})
         )
         .is_some());
+    }
+
+    #[test]
+    fn replay_frames_are_opt_in_and_isolated_from_legacy_clients() {
+        let mut interests = Interests::default();
+        interests.sessions.insert("s".into());
+        let interests = Mutex::new(interests);
+        let params = json!({"sessionId":"s","epoch":"e","events":[]});
+        assert!(scoped_event("ctx", "a", "b", &interests, "claude:sync-event", params.clone()).is_none());
+        interests.lock().unwrap().sync_sessions.insert("s".into());
+        assert!(scoped_event("ctx", "a", "b", &interests, "claude:sync-event", params.clone()).is_some());
+        let root = ProfileContexts::default();
+        assert!(!root.accepts_root_sync(&params));
+        root.subscribe_root_sync("s").unwrap();
+        assert!(root.accepts_root_sync(&params));
+        assert!(!root.accepts_root_sync(&json!({"sessionId":"other"})));
     }
 
     #[test]

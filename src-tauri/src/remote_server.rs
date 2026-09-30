@@ -293,6 +293,7 @@ struct BufferedRemoteEvent {
 
 #[derive(Clone, Default)]
 pub struct RustRemoteServerState {
+    replay: Arc<Mutex<crate::session_replay::SessionReplay>>,
     // Arc so HostContext can hand out cheap clones (all sharing the one running
     // server); the headless backing stores states by value in a type map.
     inner: Arc<Mutex<Option<RunningServer>>>,
@@ -583,6 +584,7 @@ impl RustRemoteServerState {
 
     pub fn broadcast_event(&self, channel: &str, params: &Value) {
         let canonical = canonical_remote_channel(channel);
+        let synced = self.replay.lock().ok().and_then(|mut replay| replay.record(&canonical, params, crate::session_replay::now_ms()));
         let (clients, event_buffer) = {
             let Ok(guard) = self.inner.lock() else {
                 return;
@@ -597,6 +599,11 @@ impl RustRemoteServerState {
         };
         if !has_remote_clients(&clients) {
             return;
+        }
+        if let Some(synced) = synced {
+            // Existing events remain untouched for old clients. New mobile
+            // clients consume only this sequenced stream and can replay gaps.
+            enqueue_remote_event(&clients, &event_buffer, "claude:sync-event", &synced);
         }
         if should_buffer_remote_event(&canonical)
             && enqueue_remote_event(&clients, &event_buffer, canonical.as_str(), params)
@@ -700,7 +707,7 @@ fn has_remote_clients(clients: &Arc<Mutex<Vec<RemoteClientRecord>>>) -> bool {
 fn should_buffer_remote_event(channel: &str) -> bool {
     matches!(
         canonical_remote_channel(channel).as_str(),
-        "claude:stream" | "claude:tool-result"
+        "claude:stream" | "claude:tool-result" | "claude:sync-event"
     )
 }
 
@@ -733,7 +740,13 @@ fn enqueue_remote_event(
             return false;
         };
         if let Some(index) = buffer.indexes.get(&key).copied() {
-            if canonical == "claude:stream" {
+            if canonical == "claude:sync-event" {
+                if let Some(event) = buffer.events.get_mut(index) {
+                    if let (Some(existing), Some(incoming)) = (event.params["events"].as_array_mut(), params["events"].as_array()) {
+                        existing.extend(incoming.iter().cloned());
+                    }
+                }
+            } else if canonical == "claude:stream" {
                 if let Some(event) = buffer.events.get_mut(index) {
                     merge_buffered_stream_params(&mut event.params, params);
                 }
@@ -804,6 +817,9 @@ fn send_remote_event_to_clients(
             if client.contexts.has_contexts() && channel != "profile:changed" {
                 return !client.close.load(Ordering::Acquire);
             }
+            if canonical_remote_channel(channel) == "claude:sync-event" && !client.contexts.accepts_root_sync(params) {
+                return !client.close.load(Ordering::Acquire);
+            }
             let frame = json!({
                 "type": "event",
                 "channel": agent_channel.clone(),
@@ -836,6 +852,7 @@ fn buffered_remote_event_key(channel: &str, params: &Value) -> Option<String> {
     let canonical = canonical_remote_channel(channel);
     let session_id = remote_key_part(params.get("sessionId"))?;
     match canonical.as_str() {
+        "claude:sync-event" => Some(format!("{canonical}:{session_id}:{}", params["epoch"].as_str()?)),
         "claude:stream" => Some(format!("{canonical}:{session_id}")),
         "claude:tool-result" => {
             let tool_id = remote_key_part(params.get("result").and_then(|value| value.get("id")))?;
@@ -1891,6 +1908,25 @@ mod profile_context_integration_tests {
             let state: Value = serde_json::from_str(raw.as_str().unwrap()).unwrap();
             assert_eq!(state["workspaces"][0]["id"], expected);
         }
+        let local_summary = call("workspace:summary", json!({"params":{"targets":[]}})).unwrap();
+        assert_eq!(local_summary["profiles"].as_array().unwrap().len(), 1);
+        assert_eq!(local_summary["profiles"][0]["workspaces"][0]["workspaceId"], "entry-workspace");
+        assert_eq!(local_summary["profiles"][0]["workspaces"][0]["statusKnown"], false);
+        let summary = call("workspace:summary", json!({"params":{"targets":[{"profileId":"remote-alias","workspaceId":"upstream-workspace"}]}})).unwrap();
+        let remote_summary = summary["profiles"].as_array().unwrap().iter().find(|profile| profile["profileId"] == "remote-alias").unwrap();
+        assert_eq!(remote_summary["workspaces"][0]["statusKnown"], true);
+        assert!(!summary.to_string().contains(upstream.info["token"].as_str().unwrap()));
+        assert!(call("workspace:summary", json!({"contextId":local["contextId"],"params":{"targets":[]}})).is_err());
+
+        // The cursor and replay belong to the execution host, not the entry
+        // host's same-named session. No upstream version/capability probing.
+        let upstream_cursor = upstream.server.replay.lock().unwrap().cursor("session-test", crate::session_replay::now_ms());
+        upstream.server.broadcast_event("claude:stream", &json!({"sessionId":"session-test","data":{"text":"upstream-only"}}));
+        entry.server.broadcast_event("claude:stream", &json!({"sessionId":"session-test","data":{"text":"entry-only"}}));
+        let replay = call("claude:sync-session", json!({"contextId":remote["contextId"],"params":{"sessionId":"session-test","cursor":upstream_cursor}})).unwrap();
+        assert_eq!(replay["mode"], "delta");
+        assert_eq!(replay["events"][0]["params"]["data"]["text"], "upstream-only");
+        assert_eq!(replay["events"].as_array().unwrap().len(), 1);
         let data = json!({"workspaces":[{"id":"changed-upstream","name":"Changed","folderPath":"/test"}],"terminals":[]}).to_string();
         assert_eq!(
             call(
@@ -1920,6 +1956,8 @@ mod profile_context_integration_tests {
             "message":{"id":"reply","role":"assistant","content":"hello from execution host"}}),
         );
         let deadline = Instant::now() + Duration::from_secs(5);
+        let mut saw_message = false;
+        let mut saw_sync = false;
         loop {
             let frame = rx
                 .recv_timeout(deadline.saturating_duration_since(Instant::now()))
@@ -1930,8 +1968,13 @@ mod profile_context_integration_tests {
                     frame["params"]["message"]["content"],
                     "hello from execution host"
                 );
-                break;
+                saw_message = true;
             }
+            if frame["channel"] == "agent:sync-event" {
+                assert_eq!(frame["contextId"], remote["contextId"]);
+                saw_sync |= frame["params"]["events"].as_array().unwrap().iter().any(|event| event["params"]["message"]["content"] == "hello from execution host");
+            }
+            if saw_message && saw_sync { break; }
         }
         assert!(call("workspace:load", json!({"contextId":"foreign","params":{}})).is_err());
         contexts.close(remote["contextId"].as_str().unwrap());
@@ -2210,6 +2253,10 @@ fn invoke_with_profile_context(
         .cloned()
         .unwrap_or_else(|| legacy_v1_args_to_params(&channel, &args));
     match channel.as_str() {
+        "workspace:summary" => {
+            if frame.get("contextId").is_some() { return Err("Workspace summary requires the root connection".into()); }
+            return workspace_summary(ctx, sidecar, &params);
+        }
         "profile:open" => {
             if protocol != RemoteProtocol::V2 {
                 return Err("Profile contexts require protocol v2".into());
@@ -2259,6 +2306,9 @@ fn invoke_with_profile_context(
             context.observe_result(&channel, value);
         }
         return result;
+    }
+    if channel == "claude:sync-session" {
+        contexts.subscribe_root_sync(params.get("sessionId").and_then(Value::as_str).ok_or("Missing sessionId")?)?;
     }
     invoke_sidecar_for_remote(ctx, sidecar, protocol, &channel, frame)
 }
@@ -2311,6 +2361,26 @@ fn invoke_sidecar_for_remote(
         }
     }
     log_remote_pty_write_params(&ctx, "remote-server.decoded", channel, &params);
+    if channel == "claude:sync-session" {
+        let id = string_param(&params, "sessionId", channel)?;
+        let server = ctx.state::<RustRemoteServerState>();
+        let delta = server.replay.lock().map_err(|_| "Replay unavailable")?
+            .read(&id, &params["cursor"], crate::session_replay::now_ms());
+        if delta["mode"] == "delta" { return Ok(delta); }
+        // Reject a moving checkpoint rather than acknowledge events that were
+        // not included in the runtime snapshot. The client retains its view
+        // and falls back to the established snapshot path if this fails.
+        for _ in 0..3 {
+            let before = server.replay.lock().map_err(|_| "Replay unavailable")?.cursor(&id, crate::session_replay::now_ms());
+            let state = invoke_sidecar_for_remote(ctx, sidecar, RemoteProtocol::V2,
+                "claude:get-session-state", &json!({"params":{"sessionId":id}}))?;
+            let after = server.replay.lock().map_err(|_| "Replay unavailable")?.cursor(&id, crate::session_replay::now_ms());
+            if before == after {
+                return Ok(json!({"mode":"snapshot","sessionId":id,"cursor":after,"state":state,"reason":delta["reason"]}));
+            }
+        }
+        return Err("Session changed during snapshot; retry sync".into());
+    }
     // Ahead of the dispatch below so it covers both runtimes: Codex is served
     // natively by invoke_rust_for_remote, Claude is forwarded to the sidecar,
     // and locally both are registered by the same claude_start_session call.
@@ -2383,6 +2453,72 @@ fn finish_remote_claude_login(
         _ => return Ok(result),
     };
     claude_cmd::finish_claude_login_stage(ctx, stage, channel, result)
+}
+
+fn workspace_summary(ctx: &HostContext, sidecar: &SidecarState, params: &Value) -> Result<Value, String> {
+    let targets = params.get("targets").and_then(Value::as_array).ok_or("Workspace summary requires targets")?;
+    if targets.len() > 64 { return Err("Too many summary workspaces".into()); }
+    if targets.iter().any(|target| target["profileId"].as_str().is_none() || target["workspaceId"].as_str().is_none()) {
+        return Err("Invalid summary target".into());
+    }
+    let requested: std::collections::HashSet<String> = targets.iter()
+        .filter_map(|target| target["profileId"].as_str().map(str::to_owned)).collect();
+    if requested.len() > 16 { return Err("Too many summary profiles".into()); }
+    let temporary = ProfileContexts::default();
+    let sink: ContextSink = Arc::new(|_| {});
+    let mut summaries = Vec::new();
+    for profile in profile_cmd::profile_list_core(ctx).profiles {
+        // Local catalogs are inexpensive. Never dial an unvisited remote just
+        // to populate the picker: only requested remote workspaces are read.
+        if profile.kind == "remote" && !requested.contains(&profile.id) { continue; }
+        let info = match temporary.open(ctx, &profile.id, sink.clone()) {
+            Ok(info) => info,
+            Err(_) => { summaries.push(json!({"profileId":profile.id,"profileName":profile.name,"status":"unavailable","workspaces":[]})); continue; }
+        };
+        let context_id = info["contextId"].as_str().unwrap_or_default();
+        let call = |channel: &str, params: Value| invoke_with_profile_context(ctx, sidecar, RemoteProtocol::V2,
+            channel, &json!({"contextId":context_id,"params":params}), &temporary, sink.clone());
+        let result = (|| -> Result<Value, String> {
+            let raw = call("workspace:load", json!({"profileId":profile.id}))?;
+            let snapshot: Value = match raw.as_str() {
+                Some(raw) => serde_json::from_str(raw).map_err(|_| "Invalid workspace snapshot")?,
+                None => return Err("Workspace unavailable".into()),
+            };
+            let terminals = snapshot["terminals"].as_array().ok_or("Invalid terminal snapshot")?;
+            let workspaces = snapshot["workspaces"].as_array().ok_or("Invalid workspace snapshot")?;
+            let mut rows = Vec::new();
+            for workspace in workspaces {
+                let id = workspace["id"].as_str().ok_or("Invalid workspace id")?;
+                let mut working = 0;
+                let mut total = 0;
+                let inspect = targets.iter().any(|target| target["profileId"] == profile.id && target["workspaceId"] == id);
+                let mut known = inspect;
+                let mut last_data: Option<i64> = None;
+                for terminal in terminals.iter().filter(|terminal| terminal["workspaceId"] == id) {
+                    total += 1;
+                    if !inspect { continue; }
+                    let preset = terminal["agentPreset"].as_str().unwrap_or_default();
+                    if !(preset.starts_with("codex-agent") || preset.starts_with("claude-code") || preset == "openai-agent") { continue; }
+                    match call("claude:get-session-meta", json!({"sessionId":terminal["id"]})) {
+                        Ok(meta) if meta.is_null() => {},
+                        Ok(meta) => {
+                            let status = meta["runtimeStatus"].as_str().unwrap_or_default();
+                            if meta["isStreaming"].as_bool().is_none() && status.is_empty() { known = false; }
+                            if meta["isStreaming"] == true || matches!(status,"starting"|"queued"|"waiting_for_api"|"compacting") { working += 1; }
+                            if let Some(time) = meta["lastDataAt"].as_i64() { last_data = Some(last_data.unwrap_or(0).max(time)); }
+                        },
+                        Err(_) => known = false,
+                    }
+                }
+                rows.push(json!({"workspaceId":id,"name":workspace["alias"].as_str().filter(|alias| !alias.is_empty()).or_else(|| workspace["name"].as_str()).unwrap_or(id),
+                    "folderPath":workspace["folderPath"],"total":total,"working":working,"statusKnown":known,"lastDataAt":last_data}));
+            }
+            Ok(json!({"profileId":profile.id,"profileName":profile.name,"bindingKey":info["bindingKey"],"status":"ready","workspaces":rows}))
+        })();
+        temporary.close(context_id);
+        summaries.push(result.unwrap_or_else(|_| json!({"profileId":profile.id,"profileName":profile.name,"status":"unavailable","workspaces":[]})));
+    }
+    Ok(json!({"profiles":summaries,"checkedAt":crate::session_replay::now_ms()}))
 }
 
 fn profile_id_from_params(channel: &str, params: &Value) -> Result<String, String> {

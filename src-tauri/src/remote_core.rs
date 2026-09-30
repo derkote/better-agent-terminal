@@ -335,6 +335,8 @@ fn legacy_v1_param_keys(channel: &str) -> Option<&'static [&'static str]> {
         "settings:save" => Some(&["data"]),
         "settings:get-shell-path" => Some(&["shellType"]),
         "workspace:load" => Some(&["profileId", "windowId"]),
+        "workspace:summary" => Some(&["targets"]),
+        "claude:sync-session" => Some(&["sessionId", "cursor"]),
         "workspace:save" => Some(&["profileId", "data", "windowId"]),
         "image:read-as-data-url" => Some(&["filePath"]),
         "pty:create" => Some(&["options"]),
@@ -775,6 +777,7 @@ pub fn is_proxied_remote_event(channel: &str) -> bool {
             | "claude:tool-use"
             | "claude:tool-result"
             | "claude:stream"
+            | "claude:sync-event"
             | "claude:result"
             | "claude:turn-end"
             | "claude:error"
