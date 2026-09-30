@@ -2962,29 +2962,36 @@ impl ClaudeRuntimeRouter {
         .await
     }
 
-    fn supported_models(&self, session_id: &str) -> Value {
-        if self.codex.is_owned(session_id) {
+    // The picker opens before the session starts, so ownership alone can't
+    // tell a fresh Codex tab from a Claude one: the renderer sends the tab's
+    // agent preset and that decides which catalog answers.
+    fn routes_to_codex(&self, session_id: &str, agent_preset: Option<&str>) -> bool {
+        is_codex_agent_preset_id(agent_preset) || self.codex.is_owned(session_id)
+    }
+
+    fn supported_models(&self, session_id: &str, agent_preset: Option<&str>) -> Value {
+        if self.routes_to_codex(session_id, agent_preset) {
             return self.codex.supported_models();
         }
         claude_builtin_models_native()
     }
 
-    fn supported_efforts(&self, session_id: &str) -> Value {
-        if self.codex.is_owned(session_id) {
+    fn supported_efforts(&self, session_id: &str, agent_preset: Option<&str>) -> Value {
+        if self.routes_to_codex(session_id, agent_preset) {
             return self.codex.supported_efforts();
         }
         claude_supported_efforts_native()
     }
 
-    fn supported_codex_sandbox_modes(&self, session_id: &str) -> Value {
-        if self.codex.is_owned(session_id) {
+    fn supported_codex_sandbox_modes(&self, session_id: &str, agent_preset: Option<&str>) -> Value {
+        if self.routes_to_codex(session_id, agent_preset) {
             return self.codex.supported_sandbox_modes();
         }
         codex_supported_sandbox_modes_native()
     }
 
-    fn supported_codex_approval_policies(&self, session_id: &str) -> Value {
-        if self.codex.is_owned(session_id) {
+    fn supported_codex_approval_policies(&self, session_id: &str, agent_preset: Option<&str>) -> Value {
+        if self.routes_to_codex(session_id, agent_preset) {
             return self.codex.supported_approval_policies();
         }
         codex_supported_approval_policies_native()
@@ -4325,13 +4332,14 @@ pub async fn claude_get_supported_models(
     state: State<'_, SidecarState>,
     codex_state: State<'_, CodexAppServerState>,
     session_id: String,
+    agent_preset: Option<String>,
 ) -> Result<Value, BridgeError> {
     if let Some(result) = remote_invoke_for_window(
         &HostContext::from_app(app.clone()),
         &state,
         &window,
         "agent:get-supported-models",
-        vec![json!(session_id.clone())],
+        vec![json!(session_id.clone()), json!(agent_preset.clone())],
         DEFAULT_TIMEOUT,
     )
     .await
@@ -4339,7 +4347,8 @@ pub async fn claude_get_supported_models(
         return result;
     }
     ensure_local_agent_session_access(&app, &window, &session_id)?;
-    Ok(ClaudeRuntimeRouter::from_states(app, &state, &codex_state).supported_models(&session_id))
+    Ok(ClaudeRuntimeRouter::from_states(app, &state, &codex_state)
+        .supported_models(&session_id, agent_preset.as_deref()))
 }
 
 #[cfg(feature = "desktop")]
@@ -4350,13 +4359,14 @@ pub async fn claude_get_supported_efforts(
     state: State<'_, SidecarState>,
     codex_state: State<'_, CodexAppServerState>,
     session_id: String,
+    agent_preset: Option<String>,
 ) -> Result<Value, BridgeError> {
     if let Some(result) = remote_invoke_for_window(
         &HostContext::from_app(app.clone()),
         &state,
         &window,
         "agent:get-supported-efforts",
-        vec![json!(session_id.clone())],
+        vec![json!(session_id.clone()), json!(agent_preset.clone())],
         DEFAULT_TIMEOUT,
     )
     .await
@@ -4364,7 +4374,8 @@ pub async fn claude_get_supported_efforts(
         return result;
     }
     ensure_local_agent_session_access(&app, &window, &session_id)?;
-    Ok(ClaudeRuntimeRouter::from_states(app, &state, &codex_state).supported_efforts(&session_id))
+    Ok(ClaudeRuntimeRouter::from_states(app, &state, &codex_state)
+        .supported_efforts(&session_id, agent_preset.as_deref()))
 }
 
 #[cfg(feature = "desktop")]
@@ -4375,13 +4386,14 @@ pub async fn claude_get_supported_codex_sandbox_modes(
     state: State<'_, SidecarState>,
     codex_state: State<'_, CodexAppServerState>,
     session_id: String,
+    agent_preset: Option<String>,
 ) -> Result<Value, BridgeError> {
     if let Some(result) = remote_invoke_for_window(
         &HostContext::from_app(app.clone()),
         &state,
         &window,
         "agent:get-supported-codex-sandbox-modes",
-        vec![json!(session_id.clone())],
+        vec![json!(session_id.clone()), json!(agent_preset.clone())],
         DEFAULT_TIMEOUT,
     )
     .await
@@ -4390,7 +4402,7 @@ pub async fn claude_get_supported_codex_sandbox_modes(
     }
     ensure_local_agent_session_access(&app, &window, &session_id)?;
     Ok(ClaudeRuntimeRouter::from_states(app, &state, &codex_state)
-        .supported_codex_sandbox_modes(&session_id))
+        .supported_codex_sandbox_modes(&session_id, agent_preset.as_deref()))
 }
 
 #[cfg(feature = "desktop")]
@@ -4401,13 +4413,14 @@ pub async fn claude_get_supported_codex_approval_policies(
     state: State<'_, SidecarState>,
     codex_state: State<'_, CodexAppServerState>,
     session_id: String,
+    agent_preset: Option<String>,
 ) -> Result<Value, BridgeError> {
     if let Some(result) = remote_invoke_for_window(
         &HostContext::from_app(app.clone()),
         &state,
         &window,
         "agent:get-supported-codex-approval-policies",
-        vec![json!(session_id.clone())],
+        vec![json!(session_id.clone()), json!(agent_preset.clone())],
         DEFAULT_TIMEOUT,
     )
     .await
@@ -4416,7 +4429,7 @@ pub async fn claude_get_supported_codex_approval_policies(
     }
     ensure_local_agent_session_access(&app, &window, &session_id)?;
     Ok(ClaudeRuntimeRouter::from_states(app, &state, &codex_state)
-        .supported_codex_approval_policies(&session_id))
+        .supported_codex_approval_policies(&session_id, agent_preset.as_deref()))
 }
 
 #[cfg(feature = "desktop")]
